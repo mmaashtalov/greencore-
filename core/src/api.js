@@ -1,13 +1,24 @@
 import http from 'node:http';
 
-const JSON_HEADERS = {
-  'content-type': 'application/json; charset=utf-8',
-  'cache-control': 'no-store'
-};
+function jsonHeaders(allowedOrigin) {
+  return {
+    'content-type': 'application/json; charset=utf-8',
+    'cache-control': 'no-store',
+    'access-control-allow-origin': allowedOrigin,
+    'access-control-allow-methods': 'GET,POST,OPTIONS',
+    'access-control-allow-headers': 'content-type',
+    vary: 'origin'
+  };
+}
 
-function sendJson(response, statusCode, payload) {
-  response.writeHead(statusCode, JSON_HEADERS);
+function sendJson(response, statusCode, payload, allowedOrigin) {
+  response.writeHead(statusCode, jsonHeaders(allowedOrigin));
   response.end(JSON.stringify(payload));
+}
+
+function sendEmpty(response, statusCode, allowedOrigin) {
+  response.writeHead(statusCode, jsonHeaders(allowedOrigin));
+  response.end();
 }
 
 function badRequest(message, statusCode = 400) {
@@ -42,12 +53,12 @@ function requireObject(body) {
   return body;
 }
 
-function eventLimit(requestUrl) {
+function boundedLimit(requestUrl, { defaultValue, maximum }) {
   const raw = requestUrl.searchParams.get('limit');
-  if (raw === null) return 100;
+  if (raw === null) return defaultValue;
   const parsed = Number(raw);
-  if (!Number.isInteger(parsed) || parsed < 1 || parsed > 1000) {
-    throw badRequest('limit must be an integer from 1 to 1000');
+  if (!Number.isInteger(parsed) || parsed < 1 || parsed > maximum) {
+    throw badRequest(`limit must be an integer from 1 to ${maximum}`);
   }
   return parsed;
 }
@@ -58,8 +69,13 @@ function controllerRoute(path) {
   return { controllerId: decodeURIComponent(match[1]), action: match[2] };
 }
 
-function requireCapability(engine, method) {
-  if (typeof engine[method] !== 'function') throw badRequest('Controller contract is not enabled', 501);
+function simulationReportRoute(path) {
+  const match = path.match(/^\/simulations\/([^/]+)$/);
+  return match ? decodeURIComponent(match[1]) : null;
+}
+
+function requireCapability(target, method, message) {
+  if (typeof target?.[method] !== 'function') throw badRequest(message, 501);
 }
 
 async function persistMutation(engine, persist, before) {
@@ -74,53 +90,118 @@ async function persistMutation(engine, persist, before) {
   }
 }
 
+async function persistSimulationMutation(simulations, persistSimulations, before) {
+  try {
+    await persistSimulations(simulations.snapshot());
+  } catch (cause) {
+    simulations.restore(before);
+    const error = new Error('Simulation persistence failed');
+    error.statusCode = 500;
+    error.cause = cause;
+    throw error;
+  }
+}
+
 export function createApiServer({
   engine,
+  simulations = null,
   logger = console,
-  persist = async () => {}
+  persist = async () => {},
+  persistSimulations = async () => {},
+  allowedOrigin = '*'
 }) {
   if (!engine) throw new Error('engine is required');
   if (typeof persist !== 'function') throw new Error('persist must be a function');
+  if (typeof persistSimulations !== 'function') throw new Error('persistSimulations must be a function');
+  if (typeof allowedOrigin !== 'string' || allowedOrigin.length === 0) {
+    throw new Error('allowedOrigin must be a non-empty string');
+  }
 
   return http.createServer(async (request, response) => {
     const requestUrl = new URL(request.url ?? '/', 'http://localhost');
     const path = requestUrl.pathname;
     const method = request.method ?? 'GET';
+    const send = (statusCode, payload) => sendJson(response, statusCode, payload, allowedOrigin);
 
     try {
+      if (method === 'OPTIONS') return sendEmpty(response, 204, allowedOrigin);
+
       if (method === 'GET' && path === '/health') {
-        return sendJson(response, 200, {
+        return send(200, {
           status: 'ok',
           service: 'greencore-core',
-          version: '0.2.0'
+          version: '0.8.0',
+          simulations_enabled: Boolean(simulations)
         });
       }
 
       if (method === 'GET' && path === '/state') {
-        return sendJson(response, 200, engine.snapshot());
+        return send(200, engine.snapshot());
       }
 
       if (method === 'GET' && path === '/alerts') {
-        return sendJson(response, 200, { alerts: [...engine.alerts] });
+        return send(200, { alerts: [...engine.alerts] });
       }
 
       if (method === 'GET' && path === '/events') {
-        const limit = eventLimit(requestUrl);
-        return sendJson(response, 200, { events: engine.events.slice(-limit) });
+        const limit = boundedLimit(requestUrl, { defaultValue: 100, maximum: 1000 });
+        return send(200, { events: engine.events.slice(-limit) });
+      }
+
+      if (method === 'GET' && path === '/simulations/catalog') {
+        requireCapability(simulations, 'catalog', 'Simulation service is not enabled');
+        return send(200, simulations.catalog());
+      }
+
+      if (method === 'GET' && path === '/simulations') {
+        requireCapability(simulations, 'list', 'Simulation service is not enabled');
+        const limit = boundedLimit(requestUrl, { defaultValue: 20, maximum: 100 });
+        return send(200, { reports: simulations.list({ limit }) });
+      }
+
+      if (method === 'POST' && path === '/simulations') {
+        requireCapability(simulations, 'run', 'Simulation service is not enabled');
+        const body = requireObject(await readJson(request));
+        const before = simulations.snapshot();
+        const report = simulations.run(body);
+        await persistSimulationMutation(simulations, persistSimulations, before);
+        return send(201, report);
+      }
+
+      if (method === 'POST' && path === '/simulations/compare') {
+        requireCapability(simulations, 'compare', 'Simulation service is not enabled');
+        const body = requireObject(await readJson(request));
+        const before = simulations.snapshot();
+        const report = simulations.compare(body);
+        await persistSimulationMutation(simulations, persistSimulations, before);
+        return send(201, report);
+      }
+
+      const reportId = simulationReportRoute(path);
+      if (reportId && method === 'GET') {
+        requireCapability(simulations, 'get', 'Simulation service is not enabled');
+        try {
+          return send(200, simulations.get(reportId));
+        } catch (error) {
+          if (error.message.startsWith('Unknown simulation report:')) {
+            throw badRequest(error.message, 404);
+          }
+          throw error;
+        }
       }
 
       if (method === 'GET' && path === '/controllers') {
-        requireCapability(engine, 'listControllers');
-        return sendJson(response, 200, { controllers: engine.listControllers() });
+        requireCapability(engine, 'listControllers', 'Controller contract is not enabled');
+        return send(200, { controllers: engine.listControllers() });
       }
 
       if (method === 'POST' && path === '/controllers/register') {
-        requireCapability(engine, 'registerController');
+        requireCapability(engine, 'registerController', 'Controller contract is not enabled');
         const body = requireObject(await readJson(request));
         const before = engine.snapshot();
         const controller = engine.registerController(body);
         await persistMutation(engine, persist, before);
-        return sendJson(response, 201, {
+        return send(201, {
           controller,
           configuration: engine.controllerConfiguration(controller.controller_id)
         });
@@ -128,29 +209,29 @@ export function createApiServer({
 
       const route = controllerRoute(path);
       if (route && method === 'POST' && route.action === 'heartbeat') {
-        requireCapability(engine, 'heartbeat');
+        requireCapability(engine, 'heartbeat', 'Controller contract is not enabled');
         const body = requireObject(await readJson(request));
         const before = engine.snapshot();
         const controller = engine.heartbeat(route.controllerId, body);
         await persistMutation(engine, persist, before);
-        return sendJson(response, 200, { controller });
+        return send(200, { controller });
       }
 
       if (route && method === 'GET' && route.action === 'configuration') {
-        requireCapability(engine, 'controllerConfiguration');
-        return sendJson(response, 200, engine.controllerConfiguration(route.controllerId));
+        requireCapability(engine, 'controllerConfiguration', 'Controller contract is not enabled');
+        return send(200, engine.controllerConfiguration(route.controllerId));
       }
 
       if (route && method === 'GET' && route.action === 'commands') {
-        requireCapability(engine, 'controllerCommands');
+        requireCapability(engine, 'controllerCommands', 'Controller contract is not enabled');
         const before = engine.snapshot();
         const commands = engine.controllerCommands(route.controllerId);
         await persistMutation(engine, persist, before);
-        return sendJson(response, 200, { commands });
+        return send(200, { commands });
       }
 
       if (route && method === 'POST' && route.action === 'telemetry') {
-        requireCapability(engine, 'ingestControllerTelemetry');
+        requireCapability(engine, 'ingestControllerTelemetry', 'Controller contract is not enabled');
         const body = requireObject(await readJson(request));
         const samples = Array.isArray(body.samples) ? body.samples : [body];
         if (samples.length === 0) throw badRequest('At least one telemetry sample is required');
@@ -158,11 +239,11 @@ export function createApiServer({
         const before = engine.snapshot();
         const accepted = engine.ingestControllerTelemetry(route.controllerId, samples);
         await persistMutation(engine, persist, before);
-        return sendJson(response, 202, { accepted });
+        return send(202, { accepted });
       }
 
       if (route && method === 'POST' && route.action === 'command-acks') {
-        requireCapability(engine, 'acknowledge');
+        requireCapability(engine, 'acknowledge', 'Controller contract is not enabled');
         const body = requireObject(await readJson(request));
         if (body.controller_id && body.controller_id !== route.controllerId) {
           throw badRequest('controller_id does not match request path');
@@ -170,7 +251,7 @@ export function createApiServer({
         const before = engine.snapshot();
         const command = engine.acknowledge({ ...body, controller_id: route.controllerId });
         await persistMutation(engine, persist, before);
-        return sendJson(response, 200, { acknowledged: true, command });
+        return send(200, { acknowledged: true, command });
       }
 
       if (method === 'POST' && path === '/telemetry') {
@@ -183,7 +264,7 @@ export function createApiServer({
         const before = engine.snapshot();
         const accepted = validated.map(sample => engine.ingest(sample));
         await persistMutation(engine, persist, before);
-        return sendJson(response, 202, { accepted });
+        return send(202, { accepted });
       }
 
       if (method === 'POST' && path === '/mode') {
@@ -191,7 +272,7 @@ export function createApiServer({
         const before = engine.snapshot();
         engine.setMode(body.mode);
         await persistMutation(engine, persist, before);
-        return sendJson(response, 200, { configured_mode: engine.mode });
+        return send(200, { configured_mode: engine.mode });
       }
 
       if (method === 'POST' && path === '/connectivity') {
@@ -200,7 +281,7 @@ export function createApiServer({
         const before = engine.snapshot();
         engine.setConnectivity(body.connected);
         await persistMutation(engine, persist, before);
-        return sendJson(response, 200, { connected: engine.connected });
+        return send(200, { connected: engine.connected });
       }
 
       if (method === 'POST' && path === '/manual-commands') {
@@ -211,7 +292,7 @@ export function createApiServer({
         const before = engine.snapshot();
         engine.requestManual(body.actuator_id, body.action, body.reason);
         await persistMutation(engine, persist, before);
-        return sendJson(response, 202, { queued: true });
+        return send(202, { queued: true });
       }
 
       if (method === 'POST' && path === '/command-acks') {
@@ -219,28 +300,28 @@ export function createApiServer({
         const before = engine.snapshot();
         const command = engine.acknowledge(body);
         await persistMutation(engine, persist, before);
-        return sendJson(response, 200, { acknowledged: true, command });
+        return send(200, { acknowledged: true, command });
       }
 
       if (method === 'POST' && path === '/evaluate') {
         const before = engine.snapshot();
         const commands = engine.evaluate();
         await persistMutation(engine, persist, before);
-        return sendJson(response, 200, {
+        return send(200, {
           commands,
           effective_state: engine.snapshot()
         });
       }
 
-      return sendJson(response, 404, {
+      return send(404, {
         error: 'NOT_FOUND',
         message: `No route for ${method} ${path}`
       });
     } catch (error) {
       const statusCode = Number.isInteger(error.statusCode) ? error.statusCode : 400;
       if (statusCode >= 500) logger.error?.(error);
-      return sendJson(response, statusCode, {
-        error: statusCode >= 500 ? 'INTERNAL_ERROR' : 'INVALID_REQUEST',
+      return send(statusCode, {
+        error: statusCode >= 500 ? 'INTERNAL_ERROR' : statusCode === 404 ? 'NOT_FOUND' : 'INVALID_REQUEST',
         message: error.message
       });
     }
