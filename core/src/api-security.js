@@ -93,6 +93,16 @@ export class ApiSecurity {
     return Array.isArray(apiKey) ? nonEmpty(apiKey[0]) : nonEmpty(apiKey);
   }
 
+  clientIdentity(request, principal = {}) {
+    const token = this.token(request);
+    if (token) {
+      return `token:${crypto.createHash('sha256').update(token).digest('hex').slice(0, 24)}`;
+    }
+    const address = request.socket?.remoteAddress ?? 'unknown';
+    const role = principal.role ?? 'anonymous';
+    return `${role}:${address}`;
+  }
+
   bypass() {
     return this.mode === 'disabled';
   }
