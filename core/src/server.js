@@ -9,6 +9,7 @@ import { SimulationService } from './simulation-service.js';
 import { close, createApiServer, listen } from './api.js';
 import { JsonStateStore } from './storage.js';
 import { SqliteHistoryStore } from './history-store.js';
+import { HistoryAnalytics } from './history-analytics.js';
 
 const host = process.env.HOST ?? '0.0.0.0';
 const port = Number(process.env.PORT ?? 3000);
@@ -31,6 +32,7 @@ const history = new SqliteHistoryStore({
     simulations: Number(process.env.MAX_SIMULATION_HISTORY ?? 1000)
   }
 });
+const analytics = new HistoryAnalytics({ history });
 const engine = new GreenCoreEngine({ contracts, rules });
 const runtime = new GreenCoreRuntime({ engine });
 const simulations = new SimulationService({ maxReports: maxSimulationReports });
@@ -91,6 +93,7 @@ const server = createApiServer({
   engine: runtime,
   simulations,
   history,
+  analytics,
   persist,
   persistSimulations,
   allowedOrigin
