@@ -1,0 +1,12 @@
+{
+  "extends": "../../tsconfig.base.json",
+  "compilerOptions": {
+    "outDir": "dist",
+    "declaration": true,
+    "baseUrl": ".",
+    "paths": {
+      "@greencore/domain-model": ["../domain-model/src/index.ts"]
+    }
+  },
+  "include": ["src"]
+}
