@@ -1,0 +1,63 @@
+name: GreenCore Public API Smoke
+
+on:
+  workflow_dispatch:
+  schedule:
+    - cron: '17 4 * * *'
+
+permissions:
+  contents: read
+
+concurrency:
+  group: greencore-public-api-smoke
+  cancel-in-progress: true
+
+jobs:
+  verify:
+    if: ${{ vars.PUBLIC_API_URL != '' }}
+    runs-on: ubuntu-latest
+    env:
+      PUBLIC_API_URL: ${{ vars.PUBLIC_API_URL }}
+    steps:
+      - name: Verify protected public backend
+        shell: bash
+        run: |
+          set -euo pipefail
+          base_url="${PUBLIC_API_URL%/}"
+
+          curl --fail --silent --show-error --location \
+            --connect-timeout 15 --max-time 45 \
+            "${base_url}/health" > /tmp/health.json
+          grep --fixed-strings --quiet '"status":"ok"' /tmp/health.json
+          grep --fixed-strings --quiet '"mode":"required"' /tmp/health.json
+          grep --fixed-strings --quiet '"public_read_only":true' /tmp/health.json
+          grep --fixed-strings --quiet '"public_simulations":true' /tmp/health.json
+
+          curl --fail --silent --show-error --location \
+            --connect-timeout 15 --max-time 45 \
+            "${base_url}/analytics/overview" > /tmp/overview.json
+          grep --fixed-strings --quiet '"storage"' /tmp/overview.json
+
+          set +e
+          curl --silent --show-error --no-buffer --location \
+            --connect-timeout 15 --max-time 8 \
+            "${base_url}/live" > /tmp/live.txt
+          live_status=$?
+          set -e
+          test "$live_status" -eq 0 || test "$live_status" -eq 28
+          grep --fixed-strings --quiet 'event: snapshot' /tmp/live.txt
+          grep --fixed-strings --quiet '"controller_primary"' /tmp/live.txt
+          grep --fixed-strings --quiet '"soil_moisture"' /tmp/live.txt
+          grep --fixed-strings --quiet '"mode":"AUTO"' /tmp/live.txt
+
+          curl --fail --silent --show-error --location \
+            --connect-timeout 15 --max-time 90 \
+            --header 'content-type: application/json' \
+            --data '{"name":"baseline_24h","include_timeline":false}' \
+            "${base_url}/simulations/compare" > /tmp/comparison.json
+          grep --fixed-strings --quiet '"type":"comparison"' /tmp/comparison.json
+          grep --fixed-strings --quiet 'MANUAL_WITHOUT_OPERATOR_INTERVENTIONS' /tmp/comparison.json
+
+          denied_status="$(curl --silent --output /tmp/denied.json --write-out '%{http_code}' "${base_url}/state")"
+          test "$denied_status" = 401
+          grep --fixed-strings --quiet 'UNAUTHORIZED' /tmp/denied.json

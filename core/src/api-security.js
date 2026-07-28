@@ -39,6 +39,19 @@ function parseControllerKeys(value) {
   return keys;
 }
 
+function controllerKeysFromEnv(env) {
+  const keys = parseControllerKeys(env.CONTROLLER_API_KEYS);
+  const embeddedKey = nonEmpty(env.EMBEDDED_CONTROLLER_API_KEY);
+  if (embeddedKey) {
+    const controllerId = nonEmpty(env.EMBEDDED_CONTROLLER_ID) ?? 'controller_primary';
+    if (keys[controllerId] && !secureEqual(keys[controllerId], embeddedKey)) {
+      throw new Error(`Controller key conflict for embedded controller: ${controllerId}`);
+    }
+    keys[controllerId] = embeddedKey;
+  }
+  return keys;
+}
+
 export class ApiSecurity {
   constructor({
     mode = 'disabled',
@@ -66,7 +79,7 @@ export class ApiSecurity {
       mode: env.AUTH_MODE ?? 'disabled',
       adminKey: env.ADMIN_API_KEY,
       operatorKey: env.OPERATOR_API_KEY,
-      controllerKeys: env.CONTROLLER_API_KEYS,
+      controllerKeys: controllerKeysFromEnv(env),
       publicReadOnly: env.PUBLIC_READ_ONLY === 'true',
       publicSimulations: env.PUBLIC_SIMULATIONS === 'true'
     });
@@ -163,4 +176,4 @@ export class ApiSecurity {
   }
 }
 
-export { parseControllerKeys, secureEqual };
+export { controllerKeysFromEnv, parseControllerKeys, secureEqual };

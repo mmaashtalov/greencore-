@@ -9,6 +9,7 @@ import { SimulationService } from './simulation-service.js';
 import { SimulationScheduler } from './simulation-scheduler.js';
 import { LiveEventHub } from './live-event-hub.js';
 import { RateLimiter } from './rate-limiter.js';
+import { EmbeddedDemoController } from './embedded-demo-controller.js';
 import { close, createApiServer, listen } from './api.js';
 import { ApiSecurity } from './api-security.js';
 import { JsonStateStore } from './storage.js';
@@ -50,6 +51,7 @@ const simulationScheduler = new SimulationScheduler({
   maxQueued: Number(process.env.SIMULATION_MAX_QUEUE ?? 4),
   retryAfterSeconds: Number(process.env.SIMULATION_RETRY_AFTER_SECONDS ?? 2)
 });
+const embeddedDemo = EmbeddedDemoController.fromEnv();
 const engine = new GreenCoreEngine({ contracts, rules });
 const runtime = new GreenCoreRuntime({ engine });
 const simulations = new SimulationService({ maxReports: maxSimulationReports });
@@ -132,12 +134,21 @@ const server = createApiServer({
   allowedOrigin
 });
 const address = await listen(server, { host, port });
+const internalBaseUrl = `http://127.0.0.1:${address.port}`;
 console.log(`GreenCore API listening on http://${address.address}:${address.port}`);
 console.log(`GreenCore recovery state file: ${stateFile}`);
 console.log(`GreenCore history database: ${historyDatabase}`);
 console.log(`GreenCore API security mode: ${security.status().mode}`);
 console.log(`GreenCore live stream max clients: ${live.status().max_clients}`);
 console.log(`GreenCore simulation queue: ${simulationScheduler.status().max_concurrent} active / ${simulationScheduler.status().max_queued} queued`);
+
+if (embeddedDemo.enabled) {
+  const demoStatus = await embeddedDemo.start({ baseUrl: internalBaseUrl, runtime, persist });
+  console.log(`GreenCore embedded demo controller online: ${demoStatus.controller_id}, speed=x${demoStatus.simulation_speed}, preset=${demoStatus.scenario_preset}`);
+} else {
+  console.log('GreenCore embedded demo controller disabled');
+}
+
 if (automationEnabled) {
   automation.start();
   console.log(`GreenCore automation loop enabled: ${evaluationIntervalMs} ms`);
@@ -150,6 +161,7 @@ async function shutdown(signal) {
   if (shuttingDown) return;
   shuttingDown = true;
   try {
+    embeddedDemo.stop();
     await automation.stop();
     simulationScheduler.close();
     live.close();
