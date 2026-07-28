@@ -3,7 +3,7 @@ import assert from 'node:assert/strict';
 import { SqliteHistoryStore } from '../src/history-store.js';
 import { HistoryAnalytics } from '../src/history-analytics.js';
 
-function telemetrySnapshot({ timestamp, value, metric = 'soil_moisture', unit = '%' }) {
+function telemetrySnapshot({ timestamp, value, metric = 'soil_moisture', unit = '%', quality = 'GOOD' }) {
   return {
     telemetry: {
       [metric]: {
@@ -11,7 +11,7 @@ function telemetrySnapshot({ timestamp, value, metric = 'soil_moisture', unit = 
         metric,
         value,
         unit,
-        quality: 'GOOD',
+        quality,
         timestamp
       }
     },
@@ -60,8 +60,17 @@ test('telemetry is aggregated into deterministic time buckets', () => {
   ]) {
     store.captureRuntimeSnapshot(telemetrySnapshot({ timestamp, value }));
   }
+  store.captureRuntimeSnapshot(telemetrySnapshot({
+    timestamp: '2026-07-28T10:08:00.000Z',
+    value: 99,
+    quality: 'BAD'
+  }));
 
-  const result = analytics.telemetrySeries({ metric: 'soil_moisture', bucket: '5m' });
+  const result = analytics.telemetrySeries({
+    metric: 'soil_moisture',
+    bucket: '5m',
+    quality: 'GOOD'
+  });
   assert.equal(result.bucket_seconds, 300);
   assert.equal(result.points.length, 2);
   assert.deepEqual(result.points[0], {
@@ -74,6 +83,12 @@ test('telemetry is aggregated into deterministic time buckets', () => {
     sample_count: 2
   });
   assert.equal(result.points[1].avg_value, 50);
+
+  const latestGood = analytics.latestTelemetry({ quality: 'GOOD' });
+  assert.equal(latestGood.length, 1);
+  assert.equal(latestGood[0].value, 50);
+  assert.equal(latestGood[0].quality, 'GOOD');
+
   assert.throws(() => analytics.telemetrySeries({ metric: 'soil_moisture', bucket: '2h' }), /Unsupported bucket/);
   assert.throws(() => analytics.telemetrySeries({}), /metric is required/);
   store.close();
