@@ -1,0 +1,52 @@
+{
+  "telemetry_message": {
+    "message_id": "01JGREENCORE000000000001",
+    "schema_version": "0.1.0",
+    "greenhouse_id": "greenhouse-001",
+    "zone_id": "zone-001",
+    "device_id": "soil-moisture-01",
+    "metric": "soil_moisture",
+    "value": 41.7,
+    "unit": "percent",
+    "measured_at": "2026-07-28T10:00:00+03:00",
+    "received_at": "2026-07-28T10:00:01+03:00",
+    "quality": "GOOD",
+    "source": "device-emulator",
+    "sequence": 1042
+  },
+  "command_message": {
+    "command_id": "01JGREENCORE000000000002",
+    "schema_version": "0.1.0",
+    "greenhouse_id": "greenhouse-001",
+    "zone_id": "zone-001",
+    "device_id": "pump-01",
+    "desired_state": "ON",
+    "mode": "AUTO",
+    "created_at": "2026-07-28T10:00:02+03:00",
+    "expires_at": "2026-07-28T10:05:02+03:00",
+    "reason_code": "SOIL_MOISTURE_LOW",
+    "reason": "Влажность субстрата 41.7%, нижний порог 43%",
+    "safety_constraints": {
+      "water_level_min": 15,
+      "max_run_seconds": 600
+    }
+  },
+  "command_ack": {
+    "command_id": "01JGREENCORE000000000002",
+    "device_id": "pump-01",
+    "status": "APPLIED",
+    "actual_state": "ON",
+    "acknowledged_at": "2026-07-28T10:00:03+03:00",
+    "controller_mode": "AUTO"
+  },
+  "alarm_message": {
+    "alarm_id": "01JGREENCORE000000000003",
+    "severity": "CRITICAL",
+    "code": "SOIL_SENSOR_STALE",
+    "device_id": "soil-moisture-01",
+    "opened_at": "2026-07-28T10:15:00+03:00",
+    "message": "Нет достоверных данных влажности субстрата более 15 минут",
+    "automatic_action": "Перевод насоса в SAFE/OFF",
+    "requires_owner_action": true
+  }
+}
