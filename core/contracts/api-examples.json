@@ -1,0 +1,27 @@
+{
+  "telemetry": {
+    "device_id": "soil_01",
+    "metric": "soil_moisture",
+    "value": 41.7,
+    "unit": "%",
+    "timestamp": "2026-07-28T10:00:00+03:00",
+    "quality": "GOOD"
+  },
+  "command": {
+    "command_id": "cmd_000001",
+    "actuator_id": "pump_01",
+    "actuator_type": "pump",
+    "action": "ON",
+    "issued_at": "2026-07-28T10:00:01+03:00",
+    "expires_at": "2026-07-28T10:00:31+03:00",
+    "reason": "soil_moisture below configured minimum",
+    "idempotency_key": "pump_01:ON:2026-07-28T10:00"
+  },
+  "acknowledgement": {
+    "command_id": "cmd_000001",
+    "actuator_id": "pump_01",
+    "status": "EXECUTED",
+    "timestamp": "2026-07-28T10:00:02+03:00",
+    "details": "relay state confirmed by local controller"
+  }
+}
