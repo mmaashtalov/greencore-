@@ -1,0 +1,58 @@
+{
+  "ruleset_version": "0.1.0",
+  "crop_profile": "generic-cucumber-pilot",
+  "note": "Стартовые инженерные значения для тестирования программного контура. Не являются утверждённой агрономической картой.",
+  "global_safety": {
+    "reject_future_measurement_seconds": 30,
+    "reject_older_than_seconds": 900,
+    "manual_command_max_ttl_seconds": 1800,
+    "command_ack_timeout_seconds": 15,
+    "max_commands_per_device_per_minute": 6
+  },
+  "irrigation": {
+    "metric": "soil_moisture",
+    "start_below": 43,
+    "stop_above": 58,
+    "minimum_water_level": 15,
+    "maximum_single_run_seconds": 600,
+    "minimum_pause_seconds": 300,
+    "on_missing_metric": "SAFE_OFF",
+    "on_low_water_level": "SAFE_OFF_AND_ALARM"
+  },
+  "ventilation": {
+    "metric": "air_temperature",
+    "fan_start_above": 28,
+    "fan_stop_below": 24.5,
+    "vent_open_above": 27,
+    "vent_close_below": 23.5,
+    "maximum_vent_position": 100,
+    "on_missing_metric": "SAFE_ON_AND_ALARM"
+  },
+  "mode_transitions": {
+    "AUTO_to_SAFE": [
+      "required_metric_missing",
+      "required_metric_bad",
+      "actuator_ack_timeout",
+      "controller_watchdog_fault",
+      "safety_constraint_violation"
+    ],
+    "MANUAL_to_AUTO": [
+      "manual_ttl_expired",
+      "owner_cancelled"
+    ],
+    "ANY_to_OFFLINE": [
+      "cloud_link_lost"
+    ]
+  },
+  "decision_log_required_fields": [
+    "decision_id",
+    "timestamp",
+    "mode_before",
+    "mode_after",
+    "inputs",
+    "rule_id",
+    "desired_action",
+    "safety_result",
+    "command_id"
+  ]
+}
