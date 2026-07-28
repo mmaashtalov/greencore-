@@ -1,9 +1,9 @@
 {
   "name": "@greencore/core",
-  "version": "0.10.0",
+  "version": "0.11.0",
   "private": true,
   "type": "module",
-  "description": "Hardware-agnostic greenhouse runtime with SQLite history, historical analytics and resilience campaigns.",
+  "description": "Hardware-agnostic greenhouse runtime with scoped API authorization, SQLite history and historical analytics.",
   "scripts": {
     "test": "node --test",
     "demo": "node src/demo.js",
