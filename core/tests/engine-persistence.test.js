@@ -30,7 +30,7 @@ test('expired manual request is never executed', () => {
   assert.equal(f.engine.alerts.at(-1).type, 'MANUAL_REQUEST_EXPIRED');
 });
 
-test('snapshot restore preserves state and idempotency', () => {
+test('snapshot restore preserves state, idempotency and policy audit', () => {
   const source = fixture();
   source.emulator.set('soil_moisture', 25);
   source.ingestRequired();
@@ -44,7 +44,9 @@ test('snapshot restore preserves state and idempotency', () => {
   assert.equal(restored.engine.telemetry.size, 3);
   assert.equal(restored.engine.pendingCommands.has(command.command_id), true);
   assert.equal(restored.engine.evaluate().length, 0);
-  assert.equal(restored.engine.events.at(-1).type, 'STATE_RESTORED');
+  assert.ok(restored.engine.events.some(event => event.type === 'STATE_RESTORED'));
+  assert.equal(restored.engine.events.at(-1).type, 'POLICY_DECISION_RECORDED');
+  assert.equal(restored.engine.policyDecisionHistory(1)[0].effect, 'ALLOW');
 });
 
 test('expired pending command is dropped during restore', () => {
