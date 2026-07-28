@@ -1,6 +1,6 @@
-# GreenCore Core v0.9
+# GreenCore Core v0.10
 
-Аппаратно-независимое ядро управления умной теплицей с controller contract, автоматическим runtime loop, цифровым двойником, fault campaigns, публичным simulation API и долговременной SQLite-историей.
+Аппаратно-независимое ядро управления умной теплицей с controller contract, автоматическим runtime loop, цифровым двойником, fault campaigns, публичным simulation API, SQLite-историей и серверной аналитикой.
 
 ## Честный статус
 
@@ -26,6 +26,8 @@
 - SQLite schema migrations, WAL, busy timeout и prepared statements;
 - retention limits для долговременной истории;
 - автоматическая миграция старого `simulations.json` в SQLite;
+- временные telemetry-агрегаты для графиков;
+- success rate команд, сводки тревог и simulation PASS/FAIL;
 - тестирование на Node.js 22 и 24;
 - production Docker image и container smoke-test.
 
@@ -110,6 +112,47 @@ GET /history/telemetry?metric=soil_moisture&from=2026-07-28T00:00:00Z&limit=500
 
 `from` и `to` принимают ISO 8601. Максимальный `limit` — `5000`.
 
+## Historical Analytics API
+
+| Метод | Путь | Назначение |
+|---|---|---|
+| `GET` | `/analytics/catalog` | доступные бакеты и маршруты |
+| `GET` | `/analytics/overview` | единая сводка для dashboard |
+| `GET` | `/analytics/telemetry` | временной ряд `min/max/avg/count` |
+| `GET` | `/analytics/commands` | качество исполнения команд |
+| `GET` | `/analytics/alerts` | частота и интервалы тревог |
+| `GET` | `/analytics/simulations` | статистика simulation PASS/FAIL |
+
+Доступные бакеты: `1m`, `5m`, `15m`, `1h`, `6h`, `1d`.
+
+Пример:
+
+```http
+GET /analytics/telemetry?metric=soil_moisture&bucket=15m&from=2026-07-28T00:00:00Z
+```
+
+Ответ содержит:
+
+```json
+{
+  "metric": "soil_moisture",
+  "bucket": "15m",
+  "bucket_seconds": 900,
+  "points": [
+    {
+      "bucket_start": "2026-07-28T10:00:00Z",
+      "unit": "%",
+      "min_value": 39,
+      "max_value": 47,
+      "avg_value": 43.2,
+      "sample_count": 5
+    }
+  ]
+}
+```
+
+`/analytics/commands` рассчитывает `success_rate_percent` только по терминальным статусам: `EXECUTED`, `REJECTED`, `FAILED`, `EXPIRED`.
+
 ## Public Simulation API
 
 | Метод | Путь | Назначение |
@@ -163,7 +206,7 @@ CLI возвращает код `1`, если хотя бы один крите�
 
 | Метод | Путь | Назначение |
 |---|---|---|
-| `GET` | `/health` | runtime и состояние SQLite history |
+| `GET` | `/health` | runtime, SQLite history и analytics capability |
 | `GET` | `/state` | полный runtime snapshot |
 | `GET` | `/alerts` | текущий ограниченный буфер тревог |
 | `GET` | `/events?limit=100` | текущий ограниченный буфер событий |

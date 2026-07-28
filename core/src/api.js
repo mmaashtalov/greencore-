@@ -63,8 +63,11 @@ function boundedLimit(requestUrl, { defaultValue, maximum }) {
   return parsed;
 }
 
-function queryFilters(requestUrl, names, { defaultLimit = 200, maximumLimit = 5000 } = {}) {
-  const filters = { limit: boundedLimit(requestUrl, { defaultValue: defaultLimit, maximum: maximumLimit }) };
+function queryFilters(requestUrl, names, { defaultLimit = 200, maximumLimit = 5000, includeLimit = true } = {}) {
+  const filters = {};
+  if (includeLimit) {
+    filters.limit = boundedLimit(requestUrl, { defaultValue: defaultLimit, maximum: maximumLimit });
+  }
   for (const name of names) {
     const value = requestUrl.searchParams.get(name);
     if (value !== null && value !== '') filters[name] = value;
@@ -115,6 +118,7 @@ export function createApiServer({
   engine,
   simulations = null,
   history = null,
+  analytics = null,
   logger = console,
   persist = async () => {},
   persistSimulations = async () => {},
@@ -141,8 +145,9 @@ export function createApiServer({
         return send(historyStatus?.healthy === false ? 503 : 200, {
           status: historyStatus?.healthy === false ? 'degraded' : 'ok',
           service: 'greencore-core',
-          version: '0.9.0',
+          version: '0.10.0',
           simulations_enabled: Boolean(simulations),
+          analytics_enabled: Boolean(analytics),
           history: historyStatus
         });
       }
@@ -187,6 +192,49 @@ export function createApiServer({
         requireCapability(history, 'commands', 'History database is not enabled');
         const filters = queryFilters(requestUrl, ['status', 'actuator_id', 'controller_id', 'action', 'from', 'to']);
         return send(200, { commands: history.commands(filters) });
+      }
+
+      if (method === 'GET' && path === '/analytics/catalog') {
+        requireCapability(analytics, 'catalog', 'Historical analytics is not enabled');
+        return send(200, analytics.catalog());
+      }
+
+      if (method === 'GET' && path === '/analytics/overview') {
+        requireCapability(analytics, 'overview', 'Historical analytics is not enabled');
+        const filters = queryFilters(requestUrl, ['from', 'to', 'quality'], { includeLimit: false });
+        return send(200, analytics.overview(filters));
+      }
+
+      if (method === 'GET' && path === '/analytics/telemetry') {
+        requireCapability(analytics, 'telemetrySeries', 'Historical analytics is not enabled');
+        const filters = queryFilters(
+          requestUrl,
+          ['metric', 'bucket', 'device_id', 'controller_id', 'quality', 'from', 'to'],
+          { defaultLimit: 500, maximumLimit: 5000 }
+        );
+        return send(200, analytics.telemetrySeries(filters));
+      }
+
+      if (method === 'GET' && path === '/analytics/commands') {
+        requireCapability(analytics, 'commandSummary', 'Historical analytics is not enabled');
+        const filters = queryFilters(
+          requestUrl,
+          ['actuator_id', 'controller_id', 'action', 'mode', 'from', 'to'],
+          { includeLimit: false }
+        );
+        return send(200, analytics.commandSummary(filters));
+      }
+
+      if (method === 'GET' && path === '/analytics/alerts') {
+        requireCapability(analytics, 'alertSummary', 'Historical analytics is not enabled');
+        const filters = queryFilters(requestUrl, ['from', 'to'], { includeLimit: false });
+        return send(200, analytics.alertSummary(filters));
+      }
+
+      if (method === 'GET' && path === '/analytics/simulations') {
+        requireCapability(analytics, 'simulationSummary', 'Historical analytics is not enabled');
+        const filters = queryFilters(requestUrl, ['name', 'from', 'to'], { includeLimit: false });
+        return send(200, { simulations: analytics.simulationSummary(filters) });
       }
 
       if (method === 'GET' && path === '/simulations/catalog') {
