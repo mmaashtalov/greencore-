@@ -55,15 +55,33 @@ jobs:
           container_id="$(docker run --detach --publish 127.0.0.1::3000 greencore-core:smoke)"
           trap 'docker logs "$container_id" || true; docker rm --force "$container_id" || true' EXIT
           host_port="$(docker inspect --format='{{(index (index .NetworkSettings.Ports "3000/tcp") 0).HostPort}}' "$container_id")"
+          base_url="http://127.0.0.1:${host_port}"
           for attempt in $(seq 1 30); do
-            if curl --fail --silent --show-error "http://127.0.0.1:${host_port}/health" > /tmp/health.json; then
+            if curl --fail --silent --show-error "${base_url}/health" > /tmp/health.json; then
               break
             fi
             sleep 2
           done
           grep --fixed-strings --quiet '"status":"ok"' /tmp/health.json
-          curl --fail --silent --show-error "http://127.0.0.1:${host_port}/simulations/catalog" > /tmp/catalog.json
+          grep --fixed-strings --quiet '"version":"0.12.0"' /tmp/health.json
+          grep --fixed-strings --quiet '"rate_limits"' /tmp/health.json
+          grep --fixed-strings --quiet '"live_stream"' /tmp/health.json
+
+          curl --fail --silent --show-error --dump-header /tmp/catalog.headers \
+            "${base_url}/simulations/catalog" > /tmp/catalog.json
           grep --fixed-strings --quiet 'baseline_24h' /tmp/catalog.json
+          grep --ignore-case --quiet '^ratelimit-limit:' /tmp/catalog.headers
+
+          curl --fail --silent --show-error "${base_url}/simulations/status" > /tmp/simulation-status.json
+          grep --fixed-strings --quiet '"max_concurrent":1' /tmp/simulation-status.json
+
+          set +e
+          curl --silent --show-error --no-buffer --max-time 2 "${base_url}/live" > /tmp/live.txt
+          live_status=$?
+          set -e
+          test "$live_status" -eq 0 || test "$live_status" -eq 28
+          grep --fixed-strings --quiet 'event: snapshot' /tmp/live.txt
+          grep --fixed-strings --quiet 'greencore live stream connected' /tmp/live.txt
           test "$(docker inspect --format='{{.State.Health.Status}}' "$container_id")" != "unhealthy"
 
       - name: Publish container image
