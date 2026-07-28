@@ -1,0 +1,30 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "version": "1.0.0",
+  "controller_statuses": ["BOOTING", "ONLINE", "DEGRADED", "OFFLINE", "ERROR"],
+  "delivery_statuses": ["QUEUED", "DELIVERED", "ACCEPTED", "EXECUTED", "REJECTED", "EXPIRED", "FAILED"],
+  "registration": {
+    "required": ["controller_id", "devices"],
+    "optional": ["name", "firmware", "protocol_version", "capabilities", "metadata"]
+  },
+  "heartbeat": {
+    "optional": ["status", "uptime_seconds", "firmware", "wifi_rssi", "free_memory_bytes", "cpu_temperature_c", "queue_size", "timestamp"]
+  },
+  "command": {
+    "server_fields": ["controller_id", "delivery_status", "delivered_at"],
+    "polling_semantics": "Commands remain available until a terminal acknowledgement or TTL expiry. Repeated delivery is idempotent by command_id."
+  },
+  "acknowledgement": {
+    "required": ["controller_id", "command_id", "status"],
+    "ownership_rule": "Only the controller that owns the actuator and received the command may acknowledge it."
+  },
+  "routes": [
+    "GET /controllers",
+    "POST /controllers/register",
+    "POST /controllers/{controller_id}/heartbeat",
+    "GET /controllers/{controller_id}/configuration",
+    "GET /controllers/{controller_id}/commands",
+    "POST /controllers/{controller_id}/telemetry",
+    "POST /controllers/{controller_id}/command-acks"
+  ]
+}
