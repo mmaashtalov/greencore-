@@ -1,0 +1,23 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "version": "0.1.0",
+  "telemetry": {
+    "required": ["device_id", "metric", "value", "unit", "timestamp", "quality"],
+    "metrics": {
+      "air_temperature": {"unit": "°C", "min": -40, "max": 85},
+      "air_humidity": {"unit": "%", "min": 0, "max": 100},
+      "soil_moisture": {"unit": "%", "min": 0, "max": 100},
+      "water_temperature": {"unit": "°C", "min": 0, "max": 60},
+      "water_level": {"unit": "%", "min": 0, "max": 100}
+    },
+    "quality": ["GOOD", "SUSPECT", "BAD", "MISSING"]
+  },
+  "command": {
+    "required": ["command_id", "actuator_id", "actuator_type", "action", "issued_at", "expires_at", "reason", "idempotency_key"],
+    "actuator_types": ["pump", "fan", "vent"],
+    "actions": ["ON", "OFF", "OPEN", "CLOSE"],
+    "ack_status": ["ACCEPTED", "EXECUTED", "REJECTED", "EXPIRED", "FAILED"]
+  },
+  "system_modes": ["AUTO", "MANUAL", "SAFE", "OFFLINE"],
+  "device_states": ["ONLINE", "STALE", "FAULT", "UNKNOWN", "OFFLINE"]
+}
