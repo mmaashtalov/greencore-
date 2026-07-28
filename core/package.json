@@ -1,0 +1,14 @@
+{
+  "name": "@greencore/core",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "description": "Hardware-agnostic greenhouse control engine with safety rules and device emulation.",
+  "scripts": {
+    "test": "node --test",
+    "demo": "node src/demo.js"
+  },
+  "engines": {
+    "node": ">=20"
+  }
+}
