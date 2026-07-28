@@ -61,6 +61,18 @@ test('telemetry batch can drive automatic pump command', async t => {
   assert.equal(evaluation.body.commands[0].action, 'ON');
 });
 
+test('telemetry batch is rejected atomically', async t => {
+  const f = await fixture();
+  t.after(() => close(f.server));
+
+  const valid = f.emulator.sample('air_temperature');
+  const invalid = f.emulator.sample('soil_moisture', { unit: 'invalid' });
+  const result = await post(f.request, '/telemetry', { samples: [valid, invalid] });
+
+  assert.equal(result.response.status, 400);
+  assert.equal(f.engine.telemetry.size, 0);
+});
+
 test('low water rejects manual pump activation', async t => {
   const f = await fixture();
   t.after(() => close(f.server));
@@ -127,4 +139,8 @@ test('events endpoint enforces a bounded limit', async t => {
   const result = await f.request('/events?limit=1');
   assert.equal(result.response.status, 200);
   assert.equal(result.body.events.length, 1);
+
+  const invalid = await f.request('/events?limit=not-a-number');
+  assert.equal(invalid.response.status, 400);
+  assert.equal(invalid.body.error, 'INVALID_REQUEST');
 });
