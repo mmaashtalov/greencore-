@@ -6,6 +6,9 @@ import { GreenCoreEngine } from './engine.js';
 import { GreenCoreRuntime } from './runtime.js';
 import { AutomationLoop } from './automation-loop.js';
 import { SimulationService } from './simulation-service.js';
+import { SimulationScheduler } from './simulation-scheduler.js';
+import { LiveEventHub } from './live-event-hub.js';
+import { RateLimiter } from './rate-limiter.js';
 import { close, createApiServer, listen } from './api.js';
 import { ApiSecurity } from './api-security.js';
 import { JsonStateStore } from './storage.js';
@@ -35,6 +38,18 @@ const history = new SqliteHistoryStore({
 });
 const analytics = new HistoryAnalytics({ history });
 const security = ApiSecurity.fromEnv();
+const rateLimiter = RateLimiter.fromEnv();
+const live = new LiveEventHub({
+  heartbeatIntervalMs: Number(process.env.LIVE_HEARTBEAT_INTERVAL_MS ?? 15000),
+  replayLimit: Number(process.env.LIVE_REPLAY_LIMIT ?? 100),
+  maxClients: Number(process.env.LIVE_MAX_CLIENTS ?? 100),
+  maxEventBytes: Number(process.env.LIVE_MAX_EVENT_BYTES ?? 65536)
+});
+const simulationScheduler = new SimulationScheduler({
+  maxConcurrent: Number(process.env.SIMULATION_MAX_CONCURRENT ?? 1),
+  maxQueued: Number(process.env.SIMULATION_MAX_QUEUE ?? 4),
+  retryAfterSeconds: Number(process.env.SIMULATION_RETRY_AFTER_SECONDS ?? 2)
+});
 const engine = new GreenCoreEngine({ contracts, rules });
 const runtime = new GreenCoreRuntime({ engine });
 const simulations = new SimulationService({ maxReports: maxSimulationReports });
@@ -49,7 +64,19 @@ const persistSimulations = async snapshot => history.saveSimulationSnapshot(snap
 const automation = new AutomationLoop({
   runtime,
   persist,
-  intervalMs: evaluationIntervalMs
+  intervalMs: evaluationIntervalMs,
+  onCycle: async ({ commands, snapshot, status }) => {
+    live.publish('automation.cycle', {
+      completed_at: status.last_completed_at,
+      command_count: commands.length,
+      commands,
+      mode: snapshot.mode,
+      connected: snapshot.connected,
+      telemetry: snapshot.telemetry,
+      actuators: snapshot.actuators,
+      alerts: (snapshot.alerts ?? []).slice(-10)
+    });
+  }
 });
 
 const loaded = await store.load();
@@ -96,6 +123,9 @@ const server = createApiServer({
   simulations,
   history,
   analytics,
+  live,
+  rateLimiter,
+  simulationScheduler,
   security,
   persist,
   persistSimulations,
@@ -106,6 +136,8 @@ console.log(`GreenCore API listening on http://${address.address}:${address.port
 console.log(`GreenCore recovery state file: ${stateFile}`);
 console.log(`GreenCore history database: ${historyDatabase}`);
 console.log(`GreenCore API security mode: ${security.status().mode}`);
+console.log(`GreenCore live stream max clients: ${live.status().max_clients}`);
+console.log(`GreenCore simulation queue: ${simulationScheduler.status().max_concurrent} active / ${simulationScheduler.status().max_queued} queued`);
 if (automationEnabled) {
   automation.start();
   console.log(`GreenCore automation loop enabled: ${evaluationIntervalMs} ms`);
@@ -119,6 +151,8 @@ async function shutdown(signal) {
   shuttingDown = true;
   try {
     await automation.stop();
+    simulationScheduler.close();
+    live.close();
     await close(server);
     await persist(runtime.snapshot());
     await persistSimulations(simulations.snapshot());
