@@ -87,7 +87,7 @@ jobs:
                 asset_url="${PAGE_URL%/}/${asset_path#./}"
                 if curl --fail --silent --show-error --location \
                   --connect-timeout 10 --max-time 30 \
-                  "$asset_url" | grep --fixed-strings --quiet 'GREENCORE CORE v0.8'; then
+                  "$asset_url" | grep --fixed-strings --quiet 'GREENCORE LIVE OPERATIONS'; then
                   published=true
                   break
                 fi
@@ -100,7 +100,7 @@ jobs:
             exit 1
           fi
           verified_at="$(date -u +%Y-%m-%dT%H:%M:%SZ)"
-          printf '{\n  "status": "verified",\n  "page_url": "%s",\n  "source_sha": "%s",\n  "verified_at": "%s",\n  "marker": "GREENCORE CORE v0.8"\n}\n' \
+          printf '{\n  "status": "verified",\n  "page_url": "%s",\n  "source_sha": "%s",\n  "verified_at": "%s",\n  "marker": "GREENCORE LIVE OPERATIONS"\n}\n' \
             "$PAGE_URL" "$SOURCE_SHA" "$verified_at" > /tmp/pages-status.json
 
       - name: Publish verifiable deployment status
