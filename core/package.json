@@ -3,10 +3,11 @@
   "version": "0.1.0",
   "private": true,
   "type": "module",
-  "description": "Hardware-agnostic greenhouse control engine with safety rules and device emulation.",
+  "description": "Hardware-agnostic greenhouse control engine with safety rules, HTTP API and device emulation.",
   "scripts": {
     "test": "node --test",
-    "demo": "node src/demo.js"
+    "demo": "node src/demo.js",
+    "start": "node src/server.js"
   },
   "engines": {
     "node": ">=20"
