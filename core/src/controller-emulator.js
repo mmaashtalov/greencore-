@@ -15,6 +15,7 @@ export class ControllerEmulator {
     name = 'GreenCore virtual controller',
     firmware = 'emulator-1.0.0',
     protocolVersion = '1.0',
+    apiKey = null,
     now = () => new Date(),
     fetchImpl = globalThis.fetch,
     random = Math.random,
@@ -29,6 +30,7 @@ export class ControllerEmulator {
     this.name = name;
     this.firmware = firmware;
     this.protocolVersion = protocolVersion;
+    this.apiKey = typeof apiKey === 'string' && apiKey.length > 0 ? apiKey : null;
     this.now = now;
     this.fetchImpl = fetchImpl;
     this.random = random;
@@ -103,9 +105,12 @@ export class ControllerEmulator {
     const latency = Math.max(0, finite(this.faults.latency_ms, 0));
     if (latency > 0) await sleep(latency);
 
+    const headers = {};
+    if (body !== undefined) headers['content-type'] = 'application/json';
+    if (this.apiKey) headers.authorization = `Bearer ${this.apiKey}`;
     const response = await this.fetchImpl(`${this.baseUrl}${path}`, {
       method,
-      headers: body === undefined ? undefined : { 'content-type': 'application/json' },
+      headers: Object.keys(headers).length > 0 ? headers : undefined,
       body: body === undefined ? undefined : JSON.stringify(body)
     });
     const payload = await response.json();

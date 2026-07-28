@@ -7,6 +7,7 @@ import { GreenCoreRuntime } from './runtime.js';
 import { AutomationLoop } from './automation-loop.js';
 import { SimulationService } from './simulation-service.js';
 import { close, createApiServer, listen } from './api.js';
+import { ApiSecurity } from './api-security.js';
 import { JsonStateStore } from './storage.js';
 import { SqliteHistoryStore } from './history-store.js';
 import { HistoryAnalytics } from './history-analytics.js';
@@ -33,6 +34,7 @@ const history = new SqliteHistoryStore({
   }
 });
 const analytics = new HistoryAnalytics({ history });
+const security = ApiSecurity.fromEnv();
 const engine = new GreenCoreEngine({ contracts, rules });
 const runtime = new GreenCoreRuntime({ engine });
 const simulations = new SimulationService({ maxReports: maxSimulationReports });
@@ -94,6 +96,7 @@ const server = createApiServer({
   simulations,
   history,
   analytics,
+  security,
   persist,
   persistSimulations,
   allowedOrigin
@@ -102,6 +105,7 @@ const address = await listen(server, { host, port });
 console.log(`GreenCore API listening on http://${address.address}:${address.port}`);
 console.log(`GreenCore recovery state file: ${stateFile}`);
 console.log(`GreenCore history database: ${historyDatabase}`);
+console.log(`GreenCore API security mode: ${security.status().mode}`);
 if (automationEnabled) {
   automation.start();
   console.log(`GreenCore automation loop enabled: ${evaluationIntervalMs} ms`);

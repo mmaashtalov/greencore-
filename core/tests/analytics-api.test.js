@@ -56,7 +56,7 @@ test('analytics catalog and health advertise server-side aggregation', async t =
 
   const health = await f.request('/health');
   assert.equal(health.response.status, 200);
-  assert.equal(health.body.version, '0.10.0');
+  assert.equal(health.body.version, '0.11.0');
   assert.equal(health.body.analytics_enabled, true);
 });
 

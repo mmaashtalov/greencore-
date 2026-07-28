@@ -22,17 +22,28 @@ function command(overrides = {}) {
   };
 }
 
-function fixture(handler) {
+function fixture(handler, options = {}) {
   const calls = [];
-  const fetchImpl = async (url, options = {}) => {
-    const body = options.body ? JSON.parse(options.body) : undefined;
-    calls.push({ url, method: options.method ?? 'GET', body });
-    return handler({ url, options, body, calls });
+  const fetchImpl = async (url, requestOptions = {}) => {
+    const body = requestOptions.body ? JSON.parse(requestOptions.body) : undefined;
+    calls.push({
+      url,
+      method: requestOptions.method ?? 'GET',
+      headers: requestOptions.headers,
+      body
+    });
+    return handler({ url, options: requestOptions, body, calls });
   };
   const now = () => new Date('2026-07-28T07:00:10.000Z');
   return {
     calls,
-    emulator: new ControllerEmulator({ baseUrl: 'http://core', fetchImpl, now, random: () => 0.9 })
+    emulator: new ControllerEmulator({
+      baseUrl: 'http://core',
+      fetchImpl,
+      now,
+      random: () => 0.9,
+      ...options
+    })
   };
 }
 
@@ -45,6 +56,21 @@ test('register sends stable device ownership and accepts configuration', async (
   assert.equal(f.calls[0].body.controller_id, 'controller_primary');
   assert.equal(f.calls[0].body.devices.includes('pump_01'), true);
   assert.equal(f.emulator.configuration.heartbeat_interval_seconds, 7);
+});
+
+test('configured API key is sent on GET and POST controller requests', async () => {
+  const f = fixture(({ url }) => {
+    if (url.endsWith('/commands')) return response(200, { commands: [] });
+    return response(200, { controller: {}, accepted: [] });
+  }, { apiKey: 'controller-secret' });
+
+  await f.emulator.heartbeat();
+  await f.emulator.pollCommands();
+  assert.equal(f.calls.length, 2);
+  for (const call of f.calls) {
+    assert.equal(call.headers.authorization, 'Bearer controller-secret');
+  }
+  assert.equal(f.calls[0].headers['content-type'], 'application/json');
 });
 
 test('valid command sends ACCEPTED then EXECUTED and changes actuator state', async () => {
