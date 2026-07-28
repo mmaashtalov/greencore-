@@ -2,7 +2,9 @@ name: GreenCore CI
 
 on:
   push:
-    branches: [main]
+    branches:
+      - main
+      - 'agent/**'
   pull_request:
 
 jobs:
