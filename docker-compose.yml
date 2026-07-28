@@ -10,8 +10,14 @@ services:
       HOST: 0.0.0.0
       PORT: 3000
       STATE_FILE: /app/data/state.json
+      HISTORY_DATABASE: /app/data/history.sqlite
       SIMULATION_STATE_FILE: /app/data/simulations.json
       MAX_SIMULATION_REPORTS: 50
+      MAX_SIMULATION_HISTORY: 1000
+      MAX_TELEMETRY_HISTORY: 250000
+      MAX_EVENT_HISTORY: 100000
+      MAX_ALERT_HISTORY: 50000
+      MAX_COMMAND_HISTORY: 100000
       CORS_ORIGIN: "*"
       AUTOMATION_ENABLED: "true"
       EVALUATION_INTERVAL_MS: 5000
