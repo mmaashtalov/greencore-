@@ -91,6 +91,18 @@ test('offline mode continues local automatic control', () => {
   assert.equal(commands[0].mode, 'OFFLINE');
 });
 
+test('offline mode does not trust stale telemetry', () => {
+  const f = fixture();
+  f.emulator.set('soil_moisture', 25);
+  f.ingestRequired();
+  f.engine.setMode('AUTO');
+  f.engine.setConnectivity(false);
+  f.advance(rules.telemetry.stale_after_seconds + 1);
+  const commands = f.engine.evaluate();
+  assert.equal(actions(commands).includes('pump_01:ON'), false);
+  assert.equal(f.engine.alerts.at(-1).type, 'REQUIRED_TELEMETRY_UNAVAILABLE');
+});
+
 test('pump runtime limit forces pump off', () => {
   const f = fixture();
   f.emulator.set('soil_moisture', 25);
@@ -120,4 +132,18 @@ test('bad quality telemetry is not trusted', () => {
   f.engine.setMode('AUTO');
   f.engine.evaluate();
   assert.equal(f.engine.alerts.at(-1).type, 'REQUIRED_TELEMETRY_UNAVAILABLE');
+});
+
+test('acknowledgement actuator must match command', () => {
+  const f = fixture();
+  f.emulator.set('soil_moisture', 25);
+  f.ingestRequired();
+  f.engine.setMode('AUTO');
+  const [command] = f.engine.evaluate();
+  assert.throws(() => f.engine.acknowledge({
+    command_id: command.command_id,
+    actuator_id: 'fan_01',
+    status: 'EXECUTED',
+    timestamp: f.now().toISOString()
+  }), /actuator mismatch/);
 });
