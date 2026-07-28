@@ -1,9 +1,9 @@
 {
   "name": "@greencore/core",
-  "version": "0.7.0",
+  "version": "0.8.0",
   "private": true,
   "type": "module",
-  "description": "Hardware-agnostic greenhouse runtime with automatic safety evaluation, deterministic digital twin and resilience campaigns.",
+  "description": "Hardware-agnostic greenhouse runtime with public simulation API, deterministic digital twin and resilience campaigns.",
   "scripts": {
     "test": "node --test",
     "demo": "node src/demo.js",
