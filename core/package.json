@@ -1,9 +1,9 @@
 {
   "name": "@greencore/core",
-  "version": "0.1.0",
+  "version": "0.2.0",
   "private": true,
   "type": "module",
-  "description": "Hardware-agnostic greenhouse control engine with safety rules, HTTP API and device emulation.",
+  "description": "Hardware-agnostic greenhouse control engine with persistent controller routing, safety rules, HTTP API and emulation.",
   "scripts": {
     "test": "node --test",
     "demo": "node src/demo.js",

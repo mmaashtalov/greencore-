@@ -2,6 +2,7 @@ import path from 'node:path';
 import contracts from '../contracts/device-contracts.json' with { type: 'json' };
 import rules from '../rules/pilot-rules.json' with { type: 'json' };
 import { GreenCoreEngine } from './engine.js';
+import { GreenCoreRuntime } from './runtime.js';
 import { close, createApiServer, listen } from './api.js';
 import { JsonStateStore } from './storage.js';
 
@@ -10,11 +11,12 @@ const port = Number(process.env.PORT ?? 3000);
 const stateFile = path.resolve(process.env.STATE_FILE ?? 'data/state.json');
 const store = new JsonStateStore({ filePath: stateFile });
 const engine = new GreenCoreEngine({ contracts, rules });
+const runtime = new GreenCoreRuntime({ engine });
 
 const loaded = await store.load();
 if (loaded.status === 'loaded') {
   try {
-    engine.restore(loaded.state);
+    runtime.restore(loaded.state);
     console.log(`GreenCore state restored from ${stateFile}`);
   } catch (error) {
     const quarantinePath = await store.quarantine();
@@ -24,10 +26,10 @@ if (loaded.status === 'loaded') {
   console.error(`Corrupt GreenCore state quarantined at ${loaded.quarantinePath}: ${loaded.error}`);
 }
 
-await store.save(engine.snapshot());
+await store.save(runtime.snapshot());
 
 const server = createApiServer({
-  engine,
+  engine: runtime,
   persist: snapshot => store.save(snapshot)
 });
 const address = await listen(server, { host, port });
@@ -40,7 +42,7 @@ async function shutdown(signal) {
   shuttingDown = true;
   try {
     await close(server);
-    await store.save(engine.snapshot());
+    await store.save(runtime.snapshot());
     await store.flush();
     console.log(`GreenCore stopped after ${signal}`);
   } catch (error) {
