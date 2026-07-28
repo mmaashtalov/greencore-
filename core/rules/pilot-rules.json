@@ -1,5 +1,5 @@
 {
-  "version": "0.1.0",
+  "version": "0.2.0",
   "status": "TEST_ONLY_NOT_AGRONOMICALLY_VALIDATED",
   "telemetry": {
     "stale_after_seconds": 120,
@@ -25,5 +25,185 @@
     "max_continuous_runtime_seconds": 300,
     "cooldown_seconds": 120
   },
-  "required_metrics": ["air_temperature", "soil_moisture", "water_level"]
+  "required_metrics": ["air_temperature", "soil_moisture", "water_level"],
+  "policy_set": {
+    "version": "1.0.0",
+    "status": "TEST_ONLY_NOT_AGRONOMICALLY_VALIDATED",
+    "default_effect": "ALLOW",
+    "policies": [
+      {
+        "id": "deny-activation-with-untrusted-required-telemetry",
+        "priority": 1200,
+        "effect": "DENY",
+        "description": "Запрещает активирующую команду, когда обязательная телеметрия отсутствует или недостоверна",
+        "alert_type": "POLICY_DENIED_UNTRUSTED_TELEMETRY",
+        "scope": {
+          "actions": ["ON", "OPEN"],
+          "sources": ["AUTO", "MANUAL", "OFFLINE"]
+        },
+        "when": {
+          "all": [
+            {
+              "fact": "required_telemetry_usable",
+              "operator": "eq",
+              "value": false
+            }
+          ]
+        }
+      },
+      {
+        "id": "deny-pump-on-with-untrusted-water-level",
+        "priority": 1150,
+        "effect": "DENY",
+        "description": "Запрещает включение насоса без пригодного измерения уровня воды",
+        "alert_type": "POLICY_DENIED_PUMP_UNTRUSTED_WATER",
+        "scope": {
+          "actuator_types": ["pump"],
+          "actions": ["ON"]
+        },
+        "when": {
+          "all": [
+            {
+              "fact": "telemetry.water_level.usable",
+              "operator": "eq",
+              "value": false
+            }
+          ]
+        }
+      },
+      {
+        "id": "deny-pump-on-low-water",
+        "priority": 1100,
+        "effect": "DENY",
+        "description": "Запрещает включение насоса ниже минимального безопасного уровня воды",
+        "alert_type": "POLICY_DENIED_PUMP_LOW_WATER",
+        "scope": {
+          "actuator_types": ["pump"],
+          "actions": ["ON"]
+        },
+        "when": {
+          "all": [
+            {
+              "fact": "telemetry.water_level.usable",
+              "operator": "eq",
+              "value": true
+            },
+            {
+              "fact": "telemetry.water_level.value",
+              "operator": "lt",
+              "value": {
+                "ref": "rules.water_level.minimum_for_pump_percent"
+              }
+            }
+          ]
+        }
+      },
+      {
+        "id": "deny-pump-on-runtime-limit",
+        "priority": 1050,
+        "effect": "DENY",
+        "description": "Запрещает повторное включение насоса при превышенном лимите непрерывной работы",
+        "alert_type": "POLICY_DENIED_PUMP_RUNTIME_LIMIT",
+        "scope": {
+          "actuator_types": ["pump"],
+          "actions": ["ON"]
+        },
+        "when": {
+          "all": [
+            {
+              "fact": "pump_runtime_exceeded",
+              "operator": "eq",
+              "value": true
+            }
+          ]
+        }
+      },
+      {
+        "id": "deny-pump-on-during-cooldown",
+        "priority": 1000,
+        "effect": "DENY",
+        "description": "Запрещает повторный запуск насоса до завершения периода охлаждения",
+        "alert_type": "POLICY_DENIED_PUMP_COOLDOWN",
+        "scope": {
+          "actuator_types": ["pump"],
+          "actions": ["ON"]
+        },
+        "when": {
+          "all": [
+            {
+              "fact": "actuator.state",
+              "operator": "eq",
+              "value": "OFF"
+            },
+            {
+              "fact": "actuator.changed_at_present",
+              "operator": "eq",
+              "value": true
+            },
+            {
+              "fact": "actuator.state_age_seconds",
+              "operator": "lt",
+              "value": {
+                "ref": "rules.pump.cooldown_seconds"
+              }
+            }
+          ]
+        }
+      },
+      {
+        "id": "deny-fan-off-at-high-temperature",
+        "priority": 900,
+        "effect": "DENY",
+        "description": "Запрещает выключение вентиляции при высокой температуре",
+        "alert_type": "POLICY_DENIED_FAN_OFF_HIGH_TEMPERATURE",
+        "scope": {
+          "actuator_types": ["fan"],
+          "actions": ["OFF"]
+        },
+        "when": {
+          "all": [
+            {
+              "fact": "telemetry.air_temperature.usable",
+              "operator": "eq",
+              "value": true
+            },
+            {
+              "fact": "telemetry.air_temperature.value",
+              "operator": "gte",
+              "value": {
+                "ref": "rules.air_temperature.fan_on_above_c"
+              }
+            }
+          ]
+        }
+      },
+      {
+        "id": "deny-vent-close-at-high-temperature",
+        "priority": 900,
+        "effect": "DENY",
+        "description": "Запрещает закрытие форточки при высокой температуре",
+        "alert_type": "POLICY_DENIED_VENT_CLOSE_HIGH_TEMPERATURE",
+        "scope": {
+          "actuator_types": ["vent"],
+          "actions": ["CLOSE"]
+        },
+        "when": {
+          "all": [
+            {
+              "fact": "telemetry.air_temperature.usable",
+              "operator": "eq",
+              "value": true
+            },
+            {
+              "fact": "telemetry.air_temperature.value",
+              "operator": "gte",
+              "value": {
+                "ref": "rules.air_temperature.fan_on_above_c"
+              }
+            }
+          ]
+        }
+      }
+    ]
+  }
 }
