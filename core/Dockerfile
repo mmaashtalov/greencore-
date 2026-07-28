@@ -5,7 +5,10 @@ ENV NODE_ENV=production \
     PORT=3000 \
     STATE_FILE=/app/data/state.json \
     HISTORY_DATABASE=/app/data/history.sqlite \
-    SIMULATION_STATE_FILE=/app/data/simulations.json
+    SIMULATION_STATE_FILE=/app/data/simulations.json \
+    AUTH_MODE=disabled \
+    PUBLIC_READ_ONLY=false \
+    PUBLIC_SIMULATIONS=false
 
 WORKDIR /app
 
