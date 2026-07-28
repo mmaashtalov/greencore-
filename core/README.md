@@ -1,12 +1,13 @@
-# GreenCore Core v0.5
+# GreenCore Core v0.6
 
-Аппаратно-независимое ядро управления умной теплицей с автоматическим runtime loop, контрактом локального контроллера, безопасным восстановлением состояния и детерминированным цифровым двойником.
+Аппаратно-независимое ядро управления умной теплицей с автоматическим runtime loop, контрактом локального контроллера, безопасным восстановлением, детерминированным цифровым двойником и автоматическими сценарными испытаниями.
 
 ## Статус
 
 - Физическое оборудование отсутствует и не считается протестированным.
 - Пороговые значения в `rules/pilot-rules.json` тестовые, а не агрономически подтверждённые.
-- Программный контур уже замкнут: `GreenCore → Controller Emulator → Digital Twin → telemetry → GreenCore`.
+- Программный контур замкнут: `GreenCore → Controller Emulator → Digital Twin → telemetry → GreenCore`.
+- Безопасность программного контура проверяется длительными воспроизводимыми кампаниями с PASS/FAIL-критериями.
 - Состояние ядра сохраняется в атомарно обновляемый JSON-файл. Это пилотная персистентность, не промышленная БД.
 
 ## Реализовано
@@ -19,11 +20,13 @@
 - атомарное сохранение, восстановление, rollback и quarantine повреждённого state;
 - регистрация контроллеров, ownership устройств, heartbeat и offline timeout;
 - контроллерные очереди, повторная доставка и ACK только от владельца устройства;
-- отдельный Controller Emulator с локальной защитой и fault injection;
+- Controller Emulator с локальной защитой и fault injection;
 - автоматический неперекрывающийся цикл принятия решений;
 - цифровой двойник воздуха, влажности, почвы, бака, оборудования и условного здоровья растений;
-- ускоренное модельное время и воспроизводимые сценарии;
-- unit-, integration-, recovery- и end-to-end тесты;
+- ускоренное модельное время;
+- Scenario Runner с отчётами по extrema, тревогам, командам, actuator runtime и нарушениям безопасности;
+- каталог длительных сценариев и машинно проверяемые критерии;
+- unit-, integration-, recovery-, end-to-end и campaign-тесты;
 - GitHub Actions для Node.js 20 и 22.
 
 ## Структура
@@ -31,11 +34,7 @@
 ```text
 core/
 ├── contracts/
-│   ├── device-contracts.json
-│   ├── controller-contract.json
-│   └── api-examples.json
 ├── rules/
-│   └── pilot-rules.json
 ├── src/
 │   ├── engine.js
 │   ├── runtime.js
@@ -45,11 +44,12 @@ core/
 │   ├── controller-emulator-cli.js
 │   ├── digital-twin.js
 │   ├── digital-twin-controller.js
+│   ├── scenario-runner.js
+│   ├── scenario-catalog.js
+│   ├── scenario-runner-cli.js
 │   ├── api.js
 │   ├── server.js
-│   ├── storage.js
-│   ├── demo.js
-│   └── device-emulator.js
+│   └── storage.js
 └── tests/
 ```
 
@@ -82,7 +82,7 @@ npm run emulator:controller
 | `AUTOMATION_ENABLED` | `true` | автоматический цикл; `false` отключает |
 | `EVALUATION_INTERVAL_MS` | `5000` | интервал принятия решений |
 
-## Переменные Controller Emulator
+## Controller Emulator
 
 | Переменная | По умолчанию | Назначение |
 |---|---:|---|
@@ -92,21 +92,48 @@ npm run emulator:controller
 | `DIGITAL_TWIN_PRESET` | `normal` | сценарий цифрового двойника |
 | `SIMULATION_SPEED` | `1` | множитель модельного времени |
 
-Доступные сценарии:
-
-- `normal`;
-- `heatwave`;
-- `drought`;
-- `leak`;
-- `weak_ventilation`.
-
-Пример ускоренного сценария жары:
+Доступные presets: `normal`, `heatwave`, `drought`, `leak`, `weak_ventilation`.
 
 ```bash
 DIGITAL_TWIN_PRESET=heatwave SIMULATION_SPEED=60 npm run emulator:controller
 ```
 
 Одна реальная минута будет соответствовать одному модельному часу.
+
+## Scenario Runner
+
+Запуск всего каталога:
+
+```bash
+npm run scenarios
+```
+
+Запуск одного сценария:
+
+```bash
+npm run scenarios -- tank_leak_12h
+```
+
+Каталог:
+
+- `baseline_24h`;
+- `heatwave_48h`;
+- `tank_leak_12h`;
+- `low_water_safety_2h`;
+- `pump_failure_2h`;
+- `weak_ventilation_24h`.
+
+Каждый отчёт содержит:
+
+- итоговый PASS/FAIL;
+- фактические и ожидаемые значения каждого критерия;
+- минимумы и максимумы параметров;
+- время работы насоса, вентилятора и форточки;
+- число и статусы команд;
+- типы тревог;
+- зарегистрированные нарушения safety invariant.
+
+CLI завершает процесс с кодом `1`, если хотя бы один сценарий не прошёл критерии. Поэтому кампанию можно использовать как release gate в CI.
 
 ## HTTP API
 
@@ -139,8 +166,6 @@ DIGITAL_TWIN_PRESET=heatwave SIMULATION_SPEED=60 npm run emulator:controller
 
 ## Цифровой двойник
 
-Модель связывает параметры между собой:
-
 ```text
 время суток → наружная температура и солнце
 солнце + наружный воздух → температура внутри
@@ -164,4 +189,4 @@ DIGITAL_TWIN_PRESET=heatwave SIMULATION_SPEED=60 npm run emulator:controller
 
 ## Следующий этап
 
-Scenario Runner и fault campaigns: автоматический прогон длительных сценариев жары, засухи, утечки, потери связи, отказа actuator и восстановления после рестарта с машинно проверяемыми критериями безопасности.
+Fault Campaigns v1: программные обрывы связи, рестарты контроллера и сервера, задержанные ACK, дубли сообщений, повреждение state и проверка автоматического восстановления.
