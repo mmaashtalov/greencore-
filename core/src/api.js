@@ -10,17 +10,19 @@ function sendJson(response, statusCode, payload) {
   response.end(JSON.stringify(payload));
 }
 
+function badRequest(message, statusCode = 400) {
+  const error = new Error(message);
+  error.statusCode = statusCode;
+  return error;
+}
+
 async function readJson(request, { maxBytes = 64 * 1024 } = {}) {
   const chunks = [];
   let size = 0;
 
   for await (const chunk of request) {
     size += chunk.length;
-    if (size > maxBytes) {
-      const error = new Error('Request body too large');
-      error.statusCode = 413;
-      throw error;
-    }
+    if (size > maxBytes) throw badRequest('Request body too large', 413);
     chunks.push(chunk);
   }
 
@@ -29,19 +31,25 @@ async function readJson(request, { maxBytes = 64 * 1024 } = {}) {
   try {
     return JSON.parse(Buffer.concat(chunks).toString('utf8'));
   } catch {
-    const error = new Error('Request body must be valid JSON');
-    error.statusCode = 400;
-    throw error;
+    throw badRequest('Request body must be valid JSON');
   }
 }
 
 function requireObject(body) {
   if (!body || typeof body !== 'object' || Array.isArray(body)) {
-    const error = new Error('Request body must be a JSON object');
-    error.statusCode = 400;
-    throw error;
+    throw badRequest('Request body must be a JSON object');
   }
   return body;
+}
+
+function eventLimit(requestUrl) {
+  const raw = requestUrl.searchParams.get('limit');
+  if (raw === null) return 100;
+  const parsed = Number(raw);
+  if (!Number.isInteger(parsed) || parsed < 1 || parsed > 1000) {
+    throw badRequest('limit must be an integer from 1 to 1000');
+  }
+  return parsed;
 }
 
 export function createApiServer({ engine, logger = console }) {
@@ -70,24 +78,19 @@ export function createApiServer({ engine, logger = console }) {
       }
 
       if (method === 'GET' && path === '/events') {
-        const limit = Math.min(Math.max(Number(requestUrl.searchParams.get('limit') ?? 100), 1), 1000);
+        const limit = eventLimit(requestUrl);
         return sendJson(response, 200, { events: engine.events.slice(-limit) });
       }
 
       if (method === 'POST' && path === '/telemetry') {
         const body = requireObject(await readJson(request));
         const samples = Array.isArray(body.samples) ? body.samples : [body];
-        if (samples.length === 0) {
-          const error = new Error('At least one telemetry sample is required');
-          error.statusCode = 400;
-          throw error;
-        }
-        if (samples.length > 100) {
-          const error = new Error('Maximum 100 telemetry samples per request');
-          error.statusCode = 413;
-          throw error;
-        }
-        const accepted = samples.map(sample => engine.ingest(sample));
+        if (samples.length === 0) throw badRequest('At least one telemetry sample is required');
+        if (samples.length > 100) throw badRequest('Maximum 100 telemetry samples per request', 413);
+
+        // Validate the complete batch before mutating engine state.
+        const validated = samples.map(sample => engine.validateTelemetry(sample));
+        const accepted = validated.map(sample => engine.ingest(sample));
         return sendJson(response, 202, { accepted });
       }
 
@@ -99,11 +102,7 @@ export function createApiServer({ engine, logger = console }) {
 
       if (method === 'POST' && path === '/connectivity') {
         const body = requireObject(await readJson(request));
-        if (typeof body.connected !== 'boolean') {
-          const error = new Error('connected must be boolean');
-          error.statusCode = 400;
-          throw error;
-        }
+        if (typeof body.connected !== 'boolean') throw badRequest('connected must be boolean');
         engine.setConnectivity(body.connected);
         return sendJson(response, 200, { connected: engine.connected });
       }
@@ -111,9 +110,7 @@ export function createApiServer({ engine, logger = console }) {
       if (method === 'POST' && path === '/manual-commands') {
         const body = requireObject(await readJson(request));
         if (typeof body.actuator_id !== 'string' || typeof body.action !== 'string') {
-          const error = new Error('actuator_id and action are required strings');
-          error.statusCode = 400;
-          throw error;
+          throw badRequest('actuator_id and action are required strings');
         }
         engine.requestManual(body.actuator_id, body.action, body.reason);
         return sendJson(response, 202, { queued: true });
