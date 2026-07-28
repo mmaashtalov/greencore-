@@ -1,14 +1,14 @@
-# GreenCore Core v0.7
+# GreenCore Core v0.8
 
-Аппаратно-независимое ядро управления умной теплицей с автоматическим runtime loop, контрактом локального контроллера, безопасным восстановлением, цифровым двойником и детерминированными испытаниями отказов.
+Аппаратно-независимое ядро управления умной теплицей с автоматическим runtime loop, локальным controller contract, безопасным восстановлением, цифровым двойником, fault campaigns и публичным simulation API.
 
 ## Честный статус
 
 - Физическое оборудование отсутствует и не считается протестированным.
 - Пороговые значения в `rules/pilot-rules.json` тестовые, а не агрономически подтверждённые.
 - Программный контур замкнут: `GreenCore → Controller Emulator → Digital Twin → telemetry → GreenCore`.
-- Состояние ядра сохраняется в атомарно обновляемый JSON-файл. Это пилотная персистентность, не промышленная БД.
-- Программная безопасность проверяется обычными сценариями и fault campaigns с машинным PASS/FAIL.
+- Состояние runtime и simulation reports сохраняется в атомарно обновляемые JSON-файлы. Это пилотная персистентность, не промышленная БД.
+- Сравнение manual/auto не выдаётся за сравнение со skilled operator: текущий baseline — `MANUAL_WITHOUT_OPERATOR_INTERVENTIONS`.
 
 ## Реализовано
 
@@ -17,14 +17,14 @@
 - safety interlock насоса, лимит непрерывной работы и TTL команд;
 - атомарное сохранение, rollback, restore и quarantine повреждённого state;
 - регистрация контроллеров, ownership устройств, heartbeat и offline timeout;
-- контроллерные очереди и ACK только от владельца actuator;
-- идемпотентный повтор терминального ACK, включая повтор после рестарта;
+- идемпотентный терминальный ACK, включая повтор после рестарта;
 - Controller Emulator с локальной защитой и fault injection;
 - автоматический неперекрывающийся цикл принятия решений;
 - детерминированный цифровой двойник воздуха, почвы, воды и оборудования;
-- Scenario Runner для длительных штатных сценариев;
-- Fault Campaign Runner для обрывов связи, задержки доставки, рестартов и повторов ACK;
-- 72 автоматических теста на Node.js 20 и 22;
+- Scenario Runner и Fault Campaign Runner с машинным PASS/FAIL;
+- persistent SimulationService с ограниченным хранилищем отчётов;
+- CORS-ready HTTP API для публичного dashboard;
+- автоматическая test suite на Node.js 20 и 22;
 - test-output artifacts сохраняются в GitHub Actions семь дней.
 
 ## Запуск
@@ -48,7 +48,10 @@ npm run emulator:controller
 |---|---:|---|
 | `HOST` | `0.0.0.0` | адрес API |
 | `PORT` | `3000` | порт API |
-| `STATE_FILE` | `data/state.json` | файл состояния |
+| `STATE_FILE` | `data/state.json` | runtime state |
+| `SIMULATION_STATE_FILE` | `data/simulations.json` | simulation reports |
+| `MAX_SIMULATION_REPORTS` | `50` | максимальное число сохранённых отчётов |
+| `CORS_ORIGIN` | `*` | разрешённый origin публичного dashboard |
 | `AUTOMATION_ENABLED` | `true` | автоматический цикл |
 | `EVALUATION_INTERVAL_MS` | `5000` | интервал решений |
 
@@ -68,52 +71,79 @@ Presets: `normal`, `heatwave`, `drought`, `leak`, `weak_ventilation`.
 DIGITAL_TWIN_PRESET=heatwave SIMULATION_SPEED=60 npm run emulator:controller
 ```
 
-## Штатные сценарии
+## CLI-испытания
 
-Весь каталог:
+Штатные сценарии:
 
 ```bash
 npm run scenarios
-```
-
-Один сценарий:
-
-```bash
 npm run scenarios -- tank_leak_12h
 ```
 
-Каталог: `baseline_24h`, `heatwave_48h`, `tank_leak_12h`, `low_water_safety_2h`, `pump_failure_2h`, `weak_ventilation_24h`.
-
-## Fault campaigns
-
-Весь каталог отказов:
+Fault campaigns:
 
 ```bash
 npm run faults
-```
-
-Одна кампания:
-
-```bash
 npm run faults -- controller_outage_recovery
 ```
 
-Каталог:
+CLI возвращает код `1`, если хотя бы один критерий не выполнен.
 
-- `command_delivery_blackout` — команды истекают без доставки и исполняются после восстановления polling;
-- `controller_outage_recovery` — heartbeat и telemetry пропадают, данные устаревают, управление переходит в safe state и восстанавливается;
-- `runtime_restart_and_ack_replay` — runtime восстанавливается из snapshot, повтор терминального ACK остаётся идемпотентным;
-- `cloud_connectivity_recovery` — движок продолжает локальную автоматику в режиме `OFFLINE`.
+## Public Simulation API
 
-Отчёт содержит extrema параметров, actuator runtime, команды, тревоги, safety violations, число рестартов, повторов ACK, применённых отказов и незавершённых команд. CLI возвращает код `1`, если хотя бы один критерий не выполнен.
+### Каталог
 
-## HTTP API
+```http
+GET /simulations/catalog
+```
+
+Возвращает доступные штатные сценарии, fault campaigns и обязательное предупреждение о границах модели.
+
+### Запуск сценария
+
+```http
+POST /simulations
+Content-Type: application/json
+
+{
+  "kind": "scenario",
+  "name": "heatwave_48h",
+  "include_timeline": false
+}
+```
+
+Для fault campaign используется `"kind": "fault"`.
+
+### Сравнение AUTO и manual baseline
+
+```http
+POST /simulations/compare
+Content-Type: application/json
+
+{
+  "name": "baseline_24h",
+  "include_timeline": false
+}
+```
+
+Отчёт содержит обе стратегии, одинаковые исходные условия, метрики и `automatic_minus_manual`. Manual baseline означает отсутствие операторских вмешательств и не моделирует квалифицированного агронома.
+
+### Хранилище отчётов
+
+| Метод | Путь | Назначение |
+|---|---|---|
+| `GET` | `/simulations?limit=20` | последние отчёты |
+| `GET` | `/simulations/{report_id}` | полный отчёт |
+
+При ошибке записи новый отчёт откатывается. После рестарта отчёты восстанавливаются из `SIMULATION_STATE_FILE`.
+
+## Основной HTTP API
 
 ### Система
 
 | Метод | Путь | Назначение |
 |---|---|---|
-| `GET` | `/health` | доступность процесса |
+| `GET` | `/health` | доступность и статус simulation service |
 | `GET` | `/state` | полный снимок runtime |
 | `GET` | `/alerts` | тревоги |
 | `GET` | `/events?limit=100` | события |
@@ -136,8 +166,8 @@ npm run faults -- controller_outage_recovery
 
 ## Граница ответственности
 
-`GreenCoreEngine` создаёт безопасное намерение. `GreenCoreRuntime` маршрутизирует его владельцу устройства. Локальный контроллер повторно проверяет команду перед силовым переключением. После появления ESP32 цифровой двойник заменяется физическими входами и выходами без изменения центральной архитектуры.
+`GreenCoreEngine` создаёт безопасное намерение. `GreenCoreRuntime` маршрутизирует его владельцу устройства. Локальный контроллер повторно проверяет команду перед силовым переключением. Digital Twin и comparison reports демонстрируют причинно-следственную логику, но не являются подтверждённым прогнозом урожая или прибыли.
 
 ## Следующий этап
 
-Публичный simulation API и live-dashboard: запуск сценариев через HTTP, хранение отчётов и визуальное сравнение ручного и автоматического управления по микроклимату, ресурсам, модельному здоровью и экономическим показателям.
+Live Dashboard v1: публичная страница, которая запускает comparison report, показывает два таймлайна и наглядно объясняет, где автоматика изменила микроклимат, расход ресурсов и модельное состояние растений.
