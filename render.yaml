@@ -1,0 +1,80 @@
+services:
+  - type: web
+    name: greencore-live-api
+    runtime: docker
+    plan: starter
+    region: frankfurt
+    repo: https://github.com/mmaashtalov/greencore-.git
+    branch: main
+    dockerfilePath: ./core/Dockerfile
+    dockerContext: ./core
+    healthCheckPath: /health
+    autoDeployTrigger: checksPass
+    numInstances: 1
+    envVars:
+      - key: HOST
+        value: 0.0.0.0
+      - key: STATE_FILE
+        value: /app/data/state.json
+      - key: HISTORY_DATABASE
+        value: /app/data/history.sqlite
+      - key: SIMULATION_STATE_FILE
+        value: /app/data/simulations.json
+      - key: CORS_ORIGIN
+        value: https://mmaashtalov.github.io
+      - key: AUTH_MODE
+        value: required
+      - key: ADMIN_API_KEY
+        generateValue: true
+      - key: OPERATOR_API_KEY
+        generateValue: true
+      - key: EMBEDDED_CONTROLLER_API_KEY
+        generateValue: true
+      - key: PUBLIC_READ_ONLY
+        value: "true"
+      - key: PUBLIC_SIMULATIONS
+        value: "true"
+      - key: EMBEDDED_DEMO_ENABLED
+        value: "true"
+      - key: EMBEDDED_CONTROLLER_ID
+        value: controller_primary
+      - key: EMBEDDED_CONTROLLER_FIRMWARE
+        value: embedded-demo-1.0.0
+      - key: EMBEDDED_DEMO_MODE
+        value: AUTO
+      - key: EMBEDDED_DEMO_PRESET
+        value: normal
+      - key: EMBEDDED_DEMO_SPEED
+        value: "60"
+      - key: AUTOMATION_ENABLED
+        value: "true"
+      - key: EVALUATION_INTERVAL_MS
+        value: "5000"
+      - key: SIMULATION_MAX_CONCURRENT
+        value: "1"
+      - key: SIMULATION_MAX_QUEUE
+        value: "4"
+      - key: RATE_LIMIT_SIMULATION_LIMIT
+        value: "6"
+      - key: RATE_LIMIT_SIMULATION_WINDOW_MS
+        value: "60000"
+      - key: LIVE_MAX_CLIENTS
+        value: "100"
+      - key: LIVE_REPLAY_LIMIT
+        value: "100"
+      - key: MAX_SIMULATION_REPORTS
+        value: "50"
+      - key: MAX_SIMULATION_HISTORY
+        value: "1000"
+      - key: MAX_TELEMETRY_HISTORY
+        value: "250000"
+      - key: MAX_EVENT_HISTORY
+        value: "100000"
+      - key: MAX_ALERT_HISTORY
+        value: "50000"
+      - key: MAX_COMMAND_HISTORY
+        value: "100000"
+    disk:
+      name: greencore-data
+      mountPath: /app/data
+      sizeGB: 1
