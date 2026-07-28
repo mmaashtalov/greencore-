@@ -51,7 +51,67 @@ jobs:
       url: ${{ steps.deployment.outputs.page_url }}
     runs-on: ubuntu-latest
     needs: build
+    outputs:
+      page_url: ${{ steps.deployment.outputs.page_url }}
     steps:
       - name: Deploy to GitHub Pages
         id: deployment
         uses: actions/deploy-pages@v4
+
+  verify:
+    name: Verify published dashboard
+    runs-on: ubuntu-latest
+    needs: deploy
+    permissions:
+      contents: write
+    env:
+      PAGE_URL: ${{ needs.deploy.outputs.page_url }}
+      SOURCE_SHA: ${{ github.sha }}
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Smoke test live page
+        shell: bash
+        run: |
+          set -euo pipefail
+          test -n "$PAGE_URL"
+          index_file="$(mktemp)"
+          published=false
+          for attempt in $(seq 1 30); do
+            if curl --fail --silent --show-error --location \
+              --connect-timeout 10 --max-time 30 \
+              "$PAGE_URL" --output "$index_file"; then
+              asset_path="$(grep -oE 'src="[^\"]*assets/[^\"]+\.js"' "$index_file" | head -n 1 | cut -d '"' -f 2 || true)"
+              if [ -n "$asset_path" ]; then
+                asset_url="${PAGE_URL%/}/${asset_path#./}"
+                if curl --fail --silent --show-error --location \
+                  --connect-timeout 10 --max-time 30 \
+                  "$asset_url" | grep --fixed-strings --quiet 'GREENCORE CORE v0.8'; then
+                  published=true
+                  break
+                fi
+              fi
+            fi
+            sleep 10
+          done
+          if [ "$published" != true ]; then
+            echo "Published dashboard marker was not found at $PAGE_URL" >&2
+            exit 1
+          fi
+          verified_at="$(date -u +%Y-%m-%dT%H:%M:%SZ)"
+          printf '{\n  "status": "verified",\n  "page_url": "%s",\n  "source_sha": "%s",\n  "verified_at": "%s",\n  "marker": "GREENCORE CORE v0.8"\n}\n' \
+            "$PAGE_URL" "$SOURCE_SHA" "$verified_at" > /tmp/pages-status.json
+
+      - name: Publish verifiable deployment status
+        shell: bash
+        run: |
+          set -euo pipefail
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git switch --orphan pages-status
+          git rm -rf .
+          cp /tmp/pages-status.json status.json
+          git add status.json
+          git commit -m "chore(pages): record verified deployment ${SOURCE_SHA}"
+          git push --force origin HEAD:pages-status
