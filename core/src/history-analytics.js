@@ -102,22 +102,23 @@ export class HistoryAnalytics {
 
   latestTelemetry(filters = {}) {
     const limit = boundedLimit(filters.limit, { defaultValue: 50, maximum: 500 });
-    const { clauses, parameters } = timeConditions(filters, 't.timestamp');
+    const { clauses, parameters } = timeConditions(filters);
     if (filters.quality) {
-      clauses.push('t.quality = ?');
+      clauses.push('quality = ?');
       parameters.push(filters.quality);
     }
     const where = clauses.length > 0 ? `WHERE ${clauses.join(' AND ')}` : '';
     return this.database.prepare(`
-      SELECT t.timestamp, t.controller_id, t.device_id, t.metric, t.value, t.unit, t.quality
-      FROM telemetry_history t
-      JOIN (
-        SELECT metric, MAX(timestamp) AS latest_timestamp
+      WITH ranked AS (
+        SELECT timestamp, controller_id, device_id, metric, value, unit, quality,
+               ROW_NUMBER() OVER (PARTITION BY metric ORDER BY timestamp DESC, id DESC) AS row_number
         FROM telemetry_history
-        GROUP BY metric
-      ) latest ON latest.metric = t.metric AND latest.latest_timestamp = t.timestamp
-      ${where}
-      ORDER BY t.metric ASC
+        ${where}
+      )
+      SELECT timestamp, controller_id, device_id, metric, value, unit, quality
+      FROM ranked
+      WHERE row_number = 1
+      ORDER BY metric ASC
       LIMIT ?
     `).all(...parameters, limit);
   }
@@ -212,7 +213,7 @@ export class HistoryAnalytics {
 
   overview(filters = {}) {
     return {
-      generated_at: new Date().toISOString(),
+      generated_at: this.history.now().toISOString(),
       storage: this.history.stats(),
       latest_telemetry: this.latestTelemetry({ ...filters, quality: filters.quality ?? 'GOOD' }),
       commands: this.commandSummary(filters),
