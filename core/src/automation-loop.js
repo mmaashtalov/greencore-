@@ -7,6 +7,7 @@ export class AutomationLoop {
   constructor({
     runtime,
     persist = async () => {},
+    onCycle = async () => {},
     intervalMs = 5000,
     now = () => new Date(),
     logger = console,
@@ -17,8 +18,10 @@ export class AutomationLoop {
       throw new Error('runtime with evaluate() and snapshot() is required');
     }
     if (typeof persist !== 'function') throw new Error('persist must be a function');
+    if (typeof onCycle !== 'function') throw new Error('onCycle must be a function');
     this.runtime = runtime;
     this.persist = persist;
+    this.onCycle = onCycle;
     this.intervalMs = positiveInteger(intervalMs, 'intervalMs');
     this.now = now;
     this.logger = logger;
@@ -55,7 +58,6 @@ export class AutomationLoop {
       this.metrics.skipped_cycles += 1;
       return { skipped: true, reason: 'cycle already in flight', commands: [] };
     }
-
     const operation = this.executeCycle();
     this.currentCycle = operation;
     try {
@@ -70,11 +72,17 @@ export class AutomationLoop {
     this.metrics.last_started_at = this.now().toISOString();
     try {
       const commands = this.runtime.evaluate();
-      await this.persist(this.runtime.snapshot());
+      const snapshot = this.runtime.snapshot();
+      await this.persist(snapshot);
       this.metrics.cycles += 1;
       this.metrics.commands_created += commands.length;
       this.metrics.last_completed_at = this.now().toISOString();
       this.metrics.last_error = null;
+      try {
+        await this.onCycle({ commands: structuredClone(commands), snapshot, status: this.status() });
+      } catch (error) {
+        this.logger.error?.('GreenCore automation cycle notification failed', error);
+      }
       return { skipped: false, commands };
     } catch (error) {
       this.runtime.restore(before, { logEvent: false });
@@ -90,9 +98,8 @@ export class AutomationLoop {
     this.timer = this.setIntervalImpl(() => {
       void this.runCycle().catch(error => this.logger.error?.('GreenCore automation cycle failed', error));
     }, this.intervalMs);
-    if (immediate) {
-      void this.runCycle().catch(error => this.logger.error?.('GreenCore automation cycle failed', error));
-    }
+    this.timer.unref?.();
+    if (immediate) void this.runCycle().catch(error => this.logger.error?.('GreenCore automation cycle failed', error));
     return true;
   }
 
