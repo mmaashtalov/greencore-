@@ -1,0 +1,29 @@
+{
+  "version": "0.1.0",
+  "status": "TEST_ONLY_NOT_AGRONOMICALLY_VALIDATED",
+  "telemetry": {
+    "stale_after_seconds": 120,
+    "offline_after_seconds": 600,
+    "future_tolerance_seconds": 30
+  },
+  "soil_moisture": {
+    "pump_on_below_percent": 42,
+    "pump_off_above_percent": 58
+  },
+  "air_temperature": {
+    "fan_on_above_c": 29,
+    "fan_off_below_c": 26
+  },
+  "water_level": {
+    "minimum_for_pump_percent": 20
+  },
+  "commands": {
+    "ttl_seconds": 30,
+    "ack_timeout_seconds": 10
+  },
+  "pump": {
+    "max_continuous_runtime_seconds": 300,
+    "cooldown_seconds": 120
+  },
+  "required_metrics": ["air_temperature", "soil_moisture", "water_level"]
+}
