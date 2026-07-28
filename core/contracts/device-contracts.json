@@ -1,0 +1,82 @@
+{
+  "schema_version": "0.1.0",
+  "greenhouse_id": "greenhouse-001",
+  "zone_id": "zone-001",
+  "device_states": ["ONLINE", "STALE", "FAULT", "UNKNOWN", "OFFLINE"],
+  "quality_states": ["GOOD", "SUSPECT", "BAD", "MISSING"],
+  "control_modes": ["AUTO", "MANUAL", "SAFE", "OFFLINE"],
+  "devices": [
+    {
+      "device_id": "air-temp-01",
+      "kind": "sensor",
+      "metric": "air_temperature",
+      "unit": "degC",
+      "valid_range": {"min": -20, "max": 70},
+      "stale_after_seconds": 180,
+      "critical_after_seconds": 600
+    },
+    {
+      "device_id": "air-humidity-01",
+      "kind": "sensor",
+      "metric": "air_humidity",
+      "unit": "percent_rh",
+      "valid_range": {"min": 0, "max": 100},
+      "stale_after_seconds": 180,
+      "critical_after_seconds": 600
+    },
+    {
+      "device_id": "soil-moisture-01",
+      "kind": "sensor",
+      "metric": "soil_moisture",
+      "unit": "percent",
+      "valid_range": {"min": 0, "max": 100},
+      "stale_after_seconds": 300,
+      "critical_after_seconds": 900
+    },
+    {
+      "device_id": "water-temp-01",
+      "kind": "sensor",
+      "metric": "water_temperature",
+      "unit": "degC",
+      "valid_range": {"min": 0, "max": 60},
+      "stale_after_seconds": 300,
+      "critical_after_seconds": 900
+    },
+    {
+      "device_id": "water-level-01",
+      "kind": "sensor",
+      "metric": "water_level",
+      "unit": "percent",
+      "valid_range": {"min": 0, "max": 100},
+      "stale_after_seconds": 300,
+      "critical_after_seconds": 900
+    },
+    {
+      "device_id": "pump-01",
+      "kind": "actuator",
+      "capability": "switch",
+      "allowed_states": ["ON", "OFF"],
+      "max_continuous_run_seconds": 1200,
+      "default_safe_state": "OFF",
+      "requires_metrics": ["soil_moisture", "water_level"]
+    },
+    {
+      "device_id": "fan-01",
+      "kind": "actuator",
+      "capability": "switch",
+      "allowed_states": ["ON", "OFF"],
+      "max_continuous_run_seconds": 3600,
+      "default_safe_state": "ON",
+      "requires_metrics": ["air_temperature"]
+    },
+    {
+      "device_id": "vent-01",
+      "kind": "actuator",
+      "capability": "position",
+      "allowed_range": {"min": 0, "max": 100},
+      "unit": "percent_open",
+      "default_safe_state": 50,
+      "requires_metrics": ["air_temperature"]
+    }
+  ]
+}
