@@ -6,11 +6,13 @@ on:
     paths:
       - 'core/**'
       - 'docker-compose.yml'
+      - 'render.yaml'
       - '.github/workflows/container.yml'
   pull_request:
     paths:
       - 'core/**'
       - 'docker-compose.yml'
+      - 'render.yaml'
       - '.github/workflows/container.yml'
   workflow_dispatch:
 
@@ -48,14 +50,26 @@ jobs:
           push: false
           tags: greencore-core:smoke
 
-      - name: Smoke test container
+      - name: Smoke test protected embedded live demo
         shell: bash
         run: |
           set -euo pipefail
-          container_id="$(docker run --detach --publish 127.0.0.1::3000 greencore-core:smoke)"
+          container_id="$(docker run --detach \
+            --publish 127.0.0.1::3000 \
+            --env AUTH_MODE=required \
+            --env ADMIN_API_KEY=ci-admin-secret \
+            --env OPERATOR_API_KEY=ci-operator-secret \
+            --env EMBEDDED_CONTROLLER_API_KEY=ci-controller-secret \
+            --env PUBLIC_READ_ONLY=true \
+            --env PUBLIC_SIMULATIONS=true \
+            --env EMBEDDED_DEMO_ENABLED=true \
+            --env EMBEDDED_DEMO_SPEED=60 \
+            --env EMBEDDED_DEMO_PRESET=normal \
+            greencore-core:smoke)"
           trap 'docker logs "$container_id" || true; docker rm --force "$container_id" || true' EXIT
           host_port="$(docker inspect --format='{{(index (index .NetworkSettings.Ports "3000/tcp") 0).HostPort}}' "$container_id")"
           base_url="http://127.0.0.1:${host_port}"
+
           for attempt in $(seq 1 30); do
             if curl --fail --silent --show-error "${base_url}/health" > /tmp/health.json; then
               break
@@ -63,7 +77,10 @@ jobs:
             sleep 2
           done
           grep --fixed-strings --quiet '"status":"ok"' /tmp/health.json
-          grep --fixed-strings --quiet '"version":"0.12.0"' /tmp/health.json
+          grep --fixed-strings --quiet '"mode":"required"' /tmp/health.json
+          grep --fixed-strings --quiet '"public_read_only":true' /tmp/health.json
+          grep --fixed-strings --quiet '"public_simulations":true' /tmp/health.json
+          grep --fixed-strings --quiet '"controller_key_count":1' /tmp/health.json
           grep --fixed-strings --quiet '"rate_limits"' /tmp/health.json
           grep --fixed-strings --quiet '"live_stream"' /tmp/health.json
 
@@ -75,13 +92,28 @@ jobs:
           curl --fail --silent --show-error "${base_url}/simulations/status" > /tmp/simulation-status.json
           grep --fixed-strings --quiet '"max_concurrent":1' /tmp/simulation-status.json
 
-          set +e
-          curl --silent --show-error --no-buffer --max-time 2 "${base_url}/live" > /tmp/live.txt
-          live_status=$?
-          set -e
-          test "$live_status" -eq 0 || test "$live_status" -eq 28
+          for attempt in $(seq 1 20); do
+            set +e
+            curl --silent --show-error --no-buffer --max-time 2 "${base_url}/live" > /tmp/live.txt
+            live_status=$?
+            set -e
+            test "$live_status" -eq 0 || test "$live_status" -eq 28
+            if grep --fixed-strings --quiet '"controller_primary"' /tmp/live.txt \
+              && grep --fixed-strings --quiet '"soil_moisture"' /tmp/live.txt \
+              && grep --fixed-strings --quiet '"mode":"AUTO"' /tmp/live.txt; then
+              break
+            fi
+            sleep 1
+          done
           grep --fixed-strings --quiet 'event: snapshot' /tmp/live.txt
           grep --fixed-strings --quiet 'greencore live stream connected' /tmp/live.txt
+          grep --fixed-strings --quiet '"controller_primary"' /tmp/live.txt
+          grep --fixed-strings --quiet '"soil_moisture"' /tmp/live.txt
+          grep --fixed-strings --quiet '"mode":"AUTO"' /tmp/live.txt
+
+          unauthorized_status="$(curl --silent --output /tmp/state-denied.json --write-out '%{http_code}' "${base_url}/state")"
+          test "$unauthorized_status" = 401
+          grep --fixed-strings --quiet 'UNAUTHORIZED' /tmp/state-denied.json
           test "$(docker inspect --format='{{.State.Health.Status}}' "$container_id")" != "unhealthy"
 
       - name: Publish container image
