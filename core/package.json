@@ -1,15 +1,16 @@
 {
   "name": "@greencore/core",
-  "version": "0.6.0",
+  "version": "0.7.0",
   "private": true,
   "type": "module",
-  "description": "Hardware-agnostic greenhouse runtime with automatic safety evaluation, deterministic digital twin and scenario campaigns.",
+  "description": "Hardware-agnostic greenhouse runtime with automatic safety evaluation, deterministic digital twin and resilience campaigns.",
   "scripts": {
     "test": "node --test",
     "demo": "node src/demo.js",
     "start": "node src/server.js",
     "emulator:controller": "node src/controller-emulator-cli.js",
-    "scenarios": "node src/scenario-runner-cli.js"
+    "scenarios": "node src/scenario-runner-cli.js",
+    "faults": "node src/fault-campaign-cli.js"
   },
   "engines": {
     "node": ">=20"
