@@ -8,12 +8,20 @@ import {
 } from '@greencore/simulation-core';
 import type { GreenhouseState } from '@greencore/domain-model';
 import {
+  applyLiveEvent,
+  fetchCoreHealth,
   initialApiUrl,
+  openCoreLiveStream,
   runCoreComparison,
   saveApiUrl,
   shareUrl,
   type CoreComparisonReport,
+  type CoreHealth,
   type CoreMetrics,
+  type LiveConnectionStatus,
+  type LiveEventRecord,
+  type LiveSnapshot,
+  type LiveTelemetrySample,
 } from './core-api';
 
 type Scenario = {
@@ -48,6 +56,12 @@ function money(value: number) {
     currency: 'RUB',
     maximumFractionDigits: 0,
   }).format(value);
+}
+
+function localDate(value?: string | null) {
+  if (!value) return 'нет данных';
+  const date = new Date(value);
+  return Number.isNaN(date.getTime()) ? 'нет данных' : date.toLocaleString('ru-RU');
 }
 
 function metric(label: string, value: string, danger = false) {
@@ -123,6 +137,179 @@ function CoreMetricCard({ label, metrics }: { label: string; metrics: CoreMetric
   );
 }
 
+function connectionLabel(status: LiveConnectionStatus) {
+  if (status === 'open') return 'LIVE подключён';
+  if (status === 'connecting') return 'Подключение…';
+  if (status === 'retrying') return 'Переподключение…';
+  if (status === 'closed') return 'Поток закрыт';
+  return 'API не подключён';
+}
+
+function telemetryLabel(metricName: string) {
+  const labels: Record<string, string> = {
+    soil_moisture: 'Влажность почвы',
+    air_temperature: 'Температура воздуха',
+    air_humidity: 'Влажность воздуха',
+    water_level: 'Уровень воды',
+  };
+  return labels[metricName] ?? metricName;
+}
+
+function telemetryValue(sample?: LiveTelemetrySample) {
+  if (!sample) return '—';
+  return `${sample.value.toFixed(1)} ${sample.unit}`;
+}
+
+function eventSummary(record: LiveEventRecord) {
+  const payload = record.data && typeof record.data === 'object' ? record.data as Record<string, unknown> : {};
+  if (record.event === 'telemetry') return `Принято измерений: ${String(payload.accepted_count ?? '—')}`;
+  if (record.event === 'controller.heartbeat') return `${String(payload.controller_id ?? 'контроллер')} → ${String(payload.status ?? 'UNKNOWN')}`;
+  if (record.event === 'commands.delivered') return `Команды доставлены: ${Array.isArray(payload.commands) ? payload.commands.length : 0}`;
+  if (record.event === 'command.acknowledged') {
+    const command = payload.command && typeof payload.command === 'object' ? payload.command as Record<string, unknown> : {};
+    return `${String(command.actuator_id ?? 'устройство')} ${String(command.action ?? '')} → ${String(command.delivery_status ?? 'ACK')}`;
+  }
+  if (record.event === 'mode.changed') return `Режим: ${String(payload.configured_mode ?? 'UNKNOWN')}`;
+  if (record.event === 'connectivity.changed') return `Связь: ${payload.connected === false ? 'OFFLINE' : 'ONLINE'}`;
+  if (record.event === 'simulation.completed') return `Сценарий завершён: ${String(payload.name ?? payload.report_id ?? 'simulation')}`;
+  if (record.event === 'automation.evaluated') return 'Автоматический цикл принятия решений';
+  if (record.event === 'snapshot') return 'Получено актуальное состояние GreenCore';
+  return record.event;
+}
+
+function LiveOperationsPanel({
+  apiUrl,
+  status,
+  health,
+  snapshot,
+  events,
+  lastEventAt,
+}: {
+  apiUrl: string;
+  status: LiveConnectionStatus;
+  health: CoreHealth | null;
+  snapshot: LiveSnapshot | null;
+  events: LiveEventRecord[];
+  lastEventAt: string | null;
+}) {
+  const state = snapshot?.state;
+  const telemetry = state?.telemetry ?? {};
+  const controllers = state?.controllers ?? [];
+  const actuators = state?.actuators ?? {};
+  const pendingCommands = state?.pending_commands ?? [];
+  const queue = snapshot?.simulation_queue ?? health?.simulation_queue;
+
+  return (
+    <section className="live-operations">
+      <div className="live-heading">
+        <div>
+          <p className="eyebrow">GREENCORE LIVE OPERATIONS</p>
+          <h3>Живой контур: контроллер → телеметрия → решение → команда → ACK</h3>
+          <p>{apiUrl ? apiUrl : 'Укажите публичный адрес GreenCore API, чтобы открыть живой поток.'}</p>
+        </div>
+        <div className={`live-status ${status}`}><span />{connectionLabel(status)}</div>
+      </div>
+
+      {!snapshot && (
+        <div className="live-empty">
+          <strong>{status === 'retrying' ? 'API пока недоступен' : 'Живые данные ещё не получены'}</strong>
+          <p>Автономная браузерная модель продолжает работать. SSE подключится автоматически после доступности API.</p>
+        </div>
+      )}
+
+      {snapshot && state && (
+        <>
+          <div className="live-summary">
+            <div><span>Core</span><strong>v{health?.version ?? '0.12.0'}</strong></div>
+            <div><span>Режим</span><strong>{state.effective_mode}</strong></div>
+            <div><span>Внешняя связь</span><strong>{state.connected ? 'ONLINE' : 'OFFLINE'}</strong></div>
+            <div><span>Последнее событие</span><strong>{localDate(lastEventAt ?? state.generated_at)}</strong></div>
+          </div>
+
+          <div className="live-grid">
+            <article className="live-card">
+              <div className="live-card-heading"><span>Телеметрия</span><b>{Object.keys(telemetry).length}</b></div>
+              <div className="telemetry-list">
+                {['soil_moisture', 'air_temperature', 'air_humidity', 'water_level'].map(metricName => {
+                  const sample = telemetry[metricName];
+                  return (
+                    <div key={metricName} className={!sample || sample.quality !== 'GOOD' ? 'warning' : ''}>
+                      <span>{telemetryLabel(metricName)}</span>
+                      <strong>{telemetryValue(sample)}</strong>
+                      <small>{sample ? `${sample.quality} · ${localDate(sample.timestamp)}` : 'нет данных'}</small>
+                    </div>
+                  );
+                })}
+              </div>
+            </article>
+
+            <article className="live-card">
+              <div className="live-card-heading"><span>Контроллеры</span><b>{controllers.length}</b></div>
+              <div className="controller-list">
+                {controllers.length === 0 && <p className="muted">Контроллеры не зарегистрированы.</p>}
+                {controllers.map(controller => (
+                  <div key={controller.controller_id}>
+                    <div>
+                      <strong>{controller.name ?? controller.controller_id}</strong>
+                      <small>{controller.controller_id} · {controller.firmware ?? 'firmware unknown'}</small>
+                    </div>
+                    <span className={`controller-state ${(controller.status ?? 'UNKNOWN').toLowerCase()}`}>{controller.status ?? 'UNKNOWN'}</span>
+                    <small>Heartbeat: {localDate(controller.last_heartbeat)}</small>
+                  </div>
+                ))}
+              </div>
+            </article>
+
+            <article className="live-card">
+              <div className="live-card-heading"><span>Исполнительные устройства</span><b>{Object.keys(actuators).length}</b></div>
+              <div className="actuator-list">
+                {Object.entries(actuators).map(([id, actuator]) => (
+                  <div key={id} className={['ON', 'OPEN'].includes(actuator.state) ? 'active' : ''}>
+                    <span>{id}<small>{actuator.type}</small></span>
+                    <strong>{actuator.state}</strong>
+                  </div>
+                ))}
+              </div>
+              <div className="queue-strip">
+                <span>Simulation queue</span>
+                <strong>{queue?.active ?? 0} active / {queue?.queued ?? 0} queued</strong>
+              </div>
+            </article>
+
+            <article className="live-card">
+              <div className="live-card-heading"><span>Команды и ACK</span><b>{pendingCommands.length}</b></div>
+              <div className="command-list">
+                {pendingCommands.length === 0 && <p className="muted">Незавершённых команд нет.</p>}
+                {pendingCommands.slice(0, 6).map(command => (
+                  <div key={command.command_id}>
+                    <strong>{command.actuator_id} · {command.action}</strong>
+                    <span>{command.delivery_status ?? 'QUEUED'}</span>
+                    <small>{command.reason ?? command.command_id}</small>
+                  </div>
+                ))}
+              </div>
+            </article>
+          </div>
+
+          <article className="event-stream-card">
+            <div className="live-card-heading"><span>Последние live-события</span><b>{events.length}</b></div>
+            <div className="event-list">
+              {events.length === 0 && <p className="muted">Ожидание событий…</p>}
+              {events.map((event, index) => (
+                <div key={`${event.id ?? 'direct'}-${event.received_at}-${index}`}>
+                  <span>{event.event}</span>
+                  <strong>{eventSummary(event)}</strong>
+                  <small>{localDate(event.received_at)}{event.id ? ` · #${event.id}` : ''}</small>
+                </div>
+              ))}
+            </div>
+          </article>
+        </>
+      )}
+    </section>
+  );
+}
+
 function CoreVerification({
   apiDraft,
   apiUrl,
@@ -130,7 +317,13 @@ function CoreVerification({
   error,
   report,
   copied,
+  liveStatus,
+  health,
+  liveSnapshot,
+  liveEvents,
+  lastEventAt,
   onDraftChange,
+  onConnect,
   onRun,
   onCopy,
 }: {
@@ -140,7 +333,13 @@ function CoreVerification({
   error: string;
   report: CoreComparisonReport | null;
   copied: boolean;
+  liveStatus: LiveConnectionStatus;
+  health: CoreHealth | null;
+  liveSnapshot: LiveSnapshot | null;
+  liveEvents: LiveEventRecord[];
+  lastEventAt: string | null;
   onDraftChange: (value: string) => void;
+  onConnect: () => void;
   onRun: () => void;
   onCopy: () => void;
 }) {
@@ -151,11 +350,11 @@ function CoreVerification({
     <section className="core-verification">
       <div className="verification-heading">
         <div>
-          <p className="eyebrow">GREENCORE CORE v0.8</p>
-          <h3>Проверка тем же ядром, которое управляет controller contract</h3>
-          <p>Сервер запускает идентичные 24 часа для AUTO и baseline без операторских действий, сохраняет отчёт и возвращает измеримые различия.</p>
+          <p className="eyebrow">GREENCORE CORE v{health?.version ?? '0.12.0'}</p>
+          <h3>Публичная серверная демонстрация и воспроизводимая проверка</h3>
+          <p>Live-поток показывает фактическое состояние Core. Сравнение 24 часов отдельно запускает одинаковые условия для AUTO и baseline без операторских действий.</p>
         </div>
-        <span className={`api-status ${report ? 'connected' : ''}`}>{report ? 'Отчёт получен' : apiUrl ? 'API настроен' : 'API не подключён'}</span>
+        <span className={`api-status ${liveStatus === 'open' ? 'connected' : liveStatus === 'retrying' ? 'warning' : ''}`}>{connectionLabel(liveStatus)}</span>
       </div>
 
       <div className="api-controls">
@@ -168,15 +367,25 @@ function CoreVerification({
             inputMode="url"
           />
         </label>
-        <button className="primary" onClick={onRun} disabled={loading}>{loading ? 'Считаю…' : 'Запустить проверку 24 ч'}</button>
+        <button className="primary" onClick={onConnect}>Подключить LIVE</button>
+        <button onClick={onRun} disabled={loading}>{loading ? 'Считаю…' : 'Проверка 24 ч'}</button>
         <button onClick={onCopy} disabled={!apiUrl}>{copied ? 'Ссылка скопирована' : 'Скопировать публичную ссылку'}</button>
       </div>
 
       {error && <p className="api-error">{error}</p>}
-      {!apiUrl && !report && <p className="api-note">Интерактивная браузерная модель выше работает автономно. Для серверной верификации нужен опубликованный GreenCore API.</p>}
+      {!apiUrl && !report && <p className="api-note">Интерактивная браузерная модель работает автономно. Для серверной демонстрации нужен опубликованный GreenCore API с публичным read-only SSE.</p>}
+
+      <LiveOperationsPanel
+        apiUrl={apiUrl}
+        status={liveStatus}
+        health={health}
+        snapshot={liveSnapshot}
+        events={liveEvents}
+        lastEventAt={lastEventAt}
+      />
 
       {report && auto && manual && (
-        <>
+        <section className="comparison-report">
           <div className="server-deltas">
             <div><span>Здоровье AUTO − baseline</span><strong>{signed(report.automatic_minus_manual.final_plant_health_percent)} п.п.</strong></div>
             <div><span>Снижение температурного пика</span><strong>{signed(manual.max_air_temperature_c - auto.max_air_temperature_c)} °C</strong></div>
@@ -192,7 +401,7 @@ function CoreVerification({
             <span>{new Date(report.created_at).toLocaleString('ru-RU')}</span>
           </div>
           <p className="model-notice">{report.model_notice} {report.interpretation.note}</p>
-        </>
+        </section>
       )}
     </section>
   );
@@ -210,6 +419,11 @@ export function App() {
   const [apiError, setApiError] = useState('');
   const [report, setReport] = useState<CoreComparisonReport | null>(null);
   const [copied, setCopied] = useState(false);
+  const [liveStatus, setLiveStatus] = useState<LiveConnectionStatus>(configuredApi ? 'connecting' : 'idle');
+  const [health, setHealth] = useState<CoreHealth | null>(null);
+  const [liveSnapshot, setLiveSnapshot] = useState<LiveSnapshot | null>(null);
+  const [liveEvents, setLiveEvents] = useState<LiveEventRecord[]>([]);
+  const [lastEventAt, setLastEventAt] = useState<string | null>(null);
 
   useEffect(() => {
     if (!running) return;
@@ -227,6 +441,46 @@ export function App() {
     return () => window.clearInterval(timer);
   }, [running, speed]);
 
+  useEffect(() => {
+    if (!apiUrl) {
+      setLiveStatus('idle');
+      setHealth(null);
+      setLiveSnapshot(null);
+      setLiveEvents([]);
+      setLastEventAt(null);
+      return;
+    }
+
+    let active = true;
+    setLiveEvents([]);
+    setLiveSnapshot(null);
+    setLastEventAt(null);
+    void fetchCoreHealth(apiUrl)
+      .then(result => { if (active) setHealth(result); })
+      .catch(error => { if (active) setApiError(error instanceof Error ? error.message : 'Не удалось проверить GreenCore API'); });
+
+    let closeStream = () => {};
+    try {
+      closeStream = openCoreLiveStream(apiUrl, {
+        onStatus: status => { if (active) setLiveStatus(status); },
+        onEvent: event => {
+          if (!active) return;
+          setLastEventAt(event.received_at);
+          setLiveEvents(current => [event, ...current].slice(0, 12));
+          setLiveSnapshot(current => applyLiveEvent(current, event));
+        },
+      });
+    } catch (error) {
+      setLiveStatus('closed');
+      setApiError(error instanceof Error ? error.message : 'Не удалось открыть live-поток');
+    }
+
+    return () => {
+      active = false;
+      closeStream();
+    };
+  }, [apiUrl]);
+
   const comparison = useMemo(() => {
     const autoEconomy = calculateEconomy(automatic.state, { ...defaultConfig, controlMode: 'automatic' });
     const manualEconomy = calculateEconomy(manual.state, { ...defaultConfig, controlMode: 'manual' });
@@ -243,18 +497,33 @@ export function App() {
     setRunning(true);
   };
 
+  const applyApiUrl = () => {
+    const normalized = saveApiUrl(apiDraft);
+    if (!normalized) throw new Error('Укажите адрес GreenCore API');
+    setApiUrl(normalized);
+    setApiError('');
+    const url = new URL(window.location.href);
+    url.searchParams.set('api', normalized);
+    window.history.replaceState({}, '', url);
+    return normalized;
+  };
+
+  const connectToCore = () => {
+    try {
+      applyApiUrl();
+    } catch (error) {
+      setApiError(error instanceof Error ? error.message : 'Некорректный адрес GreenCore API');
+    }
+  };
+
   const verifyWithCore = async () => {
     setLoading(true);
     setApiError('');
     setCopied(false);
     try {
-      const normalized = saveApiUrl(apiDraft);
-      setApiUrl(normalized);
+      const normalized = applyApiUrl();
       const nextReport = await runCoreComparison(normalized);
       setReport(nextReport);
-      const url = new URL(window.location.href);
-      url.searchParams.set('api', normalized);
-      window.history.replaceState({}, '', url);
     } catch (error) {
       setApiError(error instanceof Error ? error.message : 'Не удалось выполнить проверку');
     } finally {
@@ -315,7 +584,13 @@ export function App() {
         error={apiError}
         report={report}
         copied={copied}
+        liveStatus={liveStatus}
+        health={health}
+        liveSnapshot={liveSnapshot}
+        liveEvents={liveEvents}
+        lastEventAt={lastEventAt}
         onDraftChange={setApiDraft}
+        onConnect={connectToCore}
         onRun={() => void verifyWithCore()}
         onCopy={() => void copyPublicLink()}
       />
@@ -323,7 +598,7 @@ export function App() {
       <section className="explanation">
         <p className="eyebrow">ПОЧЕМУ МЕНЯЕТСЯ РЕЗУЛЬТАТ</p>
         <h3>Автоматика реагирует до того, как длительный выход параметров из диапазона накапливает модельный стресс.</h3>
-        <p>Dashboard разделяет две вещи: быстрый интерактивный digital twin в браузере и воспроизводимый отчёт серверного GreenCore Core.</p>
+        <p>Dashboard разделяет три вещи: быстрый digital twin в браузере, живой серверный контур GreenCore и воспроизводимый сравнительный отчёт.</p>
       </section>
     </main>
   );
