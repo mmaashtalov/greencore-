@@ -1,4 +1,5 @@
 import http from 'node:http';
+import { ApiSecurity } from './api-security.js';
 
 function jsonHeaders(allowedOrigin) {
   return {
@@ -6,7 +7,7 @@ function jsonHeaders(allowedOrigin) {
     'cache-control': 'no-store',
     'access-control-allow-origin': allowedOrigin,
     'access-control-allow-methods': 'GET,POST,OPTIONS',
-    'access-control-allow-headers': 'content-type',
+    'access-control-allow-headers': 'content-type, authorization, x-api-key',
     vary: 'origin'
   };
 }
@@ -114,11 +115,21 @@ async function persistSimulationMutation(simulations, persistSimulations, before
   }
 }
 
+function errorCode(statusCode) {
+  if (statusCode >= 500) return 'INTERNAL_ERROR';
+  if (statusCode === 404) return 'NOT_FOUND';
+  if (statusCode === 401) return 'UNAUTHORIZED';
+  if (statusCode === 403) return 'FORBIDDEN';
+  if (statusCode === 429) return 'RATE_LIMITED';
+  return 'INVALID_REQUEST';
+}
+
 export function createApiServer({
   engine,
   simulations = null,
   history = null,
   analytics = null,
+  security = new ApiSecurity(),
   logger = console,
   persist = async () => {},
   persistSimulations = async () => {},
@@ -127,6 +138,7 @@ export function createApiServer({
   if (!engine) throw new Error('engine is required');
   if (typeof persist !== 'function') throw new Error('persist must be a function');
   if (typeof persistSimulations !== 'function') throw new Error('persistSimulations must be a function');
+  if (!security || typeof security.requireOperator !== 'function') throw new Error('security is invalid');
   if (typeof allowedOrigin !== 'string' || allowedOrigin.length === 0) {
     throw new Error('allowedOrigin must be a non-empty string');
   }
@@ -145,67 +157,79 @@ export function createApiServer({
         return send(historyStatus?.healthy === false ? 503 : 200, {
           status: historyStatus?.healthy === false ? 'degraded' : 'ok',
           service: 'greencore-core',
-          version: '0.10.0',
+          version: '0.11.0',
           simulations_enabled: Boolean(simulations),
           analytics_enabled: Boolean(analytics),
+          security: security.status(),
           history: historyStatus
         });
       }
 
       if (method === 'GET' && path === '/state') {
+        security.requireOperator(request);
         return send(200, engine.snapshot());
       }
 
       if (method === 'GET' && path === '/alerts') {
+        security.requireOperator(request);
         return send(200, { alerts: [...engine.alerts] });
       }
 
       if (method === 'GET' && path === '/events') {
+        security.requireOperator(request);
         const limit = boundedLimit(requestUrl, { defaultValue: 100, maximum: 1000 });
         return send(200, { events: engine.events.slice(-limit) });
       }
 
       if (method === 'GET' && path === '/history/stats') {
+        security.requireOperator(request);
         requireCapability(history, 'stats', 'History database is not enabled');
         return send(200, history.stats());
       }
 
       if (method === 'GET' && path === '/history/telemetry') {
+        security.requireOperator(request);
         requireCapability(history, 'telemetry', 'History database is not enabled');
         const filters = queryFilters(requestUrl, ['metric', 'device_id', 'controller_id', 'quality', 'from', 'to']);
         return send(200, { samples: history.telemetry(filters) });
       }
 
       if (method === 'GET' && path === '/history/events') {
+        security.requireOperator(request);
         requireCapability(history, 'events', 'History database is not enabled');
         const filters = queryFilters(requestUrl, ['type', 'from', 'to']);
         return send(200, { events: history.events(filters) });
       }
 
       if (method === 'GET' && path === '/history/alerts') {
+        security.requireOperator(request);
         requireCapability(history, 'alerts', 'History database is not enabled');
         const filters = queryFilters(requestUrl, ['type', 'from', 'to']);
         return send(200, { alerts: history.alerts(filters) });
       }
 
       if (method === 'GET' && path === '/history/commands') {
+        security.requireOperator(request);
         requireCapability(history, 'commands', 'History database is not enabled');
         const filters = queryFilters(requestUrl, ['status', 'actuator_id', 'controller_id', 'action', 'from', 'to']);
         return send(200, { commands: history.commands(filters) });
       }
 
       if (method === 'GET' && path === '/analytics/catalog') {
+        security.requireRead(request);
         requireCapability(analytics, 'catalog', 'Historical analytics is not enabled');
         return send(200, analytics.catalog());
       }
 
       if (method === 'GET' && path === '/analytics/overview') {
+        security.requireRead(request);
         requireCapability(analytics, 'overview', 'Historical analytics is not enabled');
         const filters = queryFilters(requestUrl, ['from', 'to', 'quality'], { includeLimit: false });
         return send(200, analytics.overview(filters));
       }
 
       if (method === 'GET' && path === '/analytics/telemetry') {
+        security.requireRead(request);
         requireCapability(analytics, 'telemetrySeries', 'Historical analytics is not enabled');
         const filters = queryFilters(
           requestUrl,
@@ -216,6 +240,7 @@ export function createApiServer({
       }
 
       if (method === 'GET' && path === '/analytics/commands') {
+        security.requireRead(request);
         requireCapability(analytics, 'commandSummary', 'Historical analytics is not enabled');
         const filters = queryFilters(
           requestUrl,
@@ -226,12 +251,14 @@ export function createApiServer({
       }
 
       if (method === 'GET' && path === '/analytics/alerts') {
+        security.requireRead(request);
         requireCapability(analytics, 'alertSummary', 'Historical analytics is not enabled');
         const filters = queryFilters(requestUrl, ['from', 'to'], { includeLimit: false });
         return send(200, analytics.alertSummary(filters));
       }
 
       if (method === 'GET' && path === '/analytics/simulations') {
+        security.requireRead(request);
         requireCapability(analytics, 'simulationSummary', 'Historical analytics is not enabled');
         const filters = queryFilters(requestUrl, ['name', 'from', 'to'], { includeLimit: false });
         return send(200, { simulations: analytics.simulationSummary(filters) });
@@ -243,12 +270,14 @@ export function createApiServer({
       }
 
       if (method === 'GET' && path === '/simulations') {
+        security.requireRead(request);
         requireCapability(simulations, 'list', 'Simulation service is not enabled');
         const limit = boundedLimit(requestUrl, { defaultValue: 20, maximum: 100 });
         return send(200, { reports: simulations.list({ limit }) });
       }
 
       if (method === 'POST' && path === '/simulations') {
+        security.requireSimulation(request);
         requireCapability(simulations, 'run', 'Simulation service is not enabled');
         const body = requireObject(await readJson(request));
         const before = simulations.snapshot();
@@ -258,6 +287,7 @@ export function createApiServer({
       }
 
       if (method === 'POST' && path === '/simulations/compare') {
+        security.requireSimulation(request);
         requireCapability(simulations, 'compare', 'Simulation service is not enabled');
         const body = requireObject(await readJson(request));
         const before = simulations.snapshot();
@@ -268,6 +298,7 @@ export function createApiServer({
 
       const reportId = simulationReportRoute(path);
       if (reportId && method === 'GET') {
+        security.requireRead(request);
         requireCapability(simulations, 'get', 'Simulation service is not enabled');
         try {
           return send(200, simulations.get(reportId));
@@ -280,6 +311,7 @@ export function createApiServer({
       }
 
       if (method === 'GET' && path === '/controllers') {
+        security.requireOperator(request);
         requireCapability(engine, 'listControllers', 'Controller contract is not enabled');
         return send(200, { controllers: engine.listControllers() });
       }
@@ -287,6 +319,7 @@ export function createApiServer({
       if (method === 'POST' && path === '/controllers/register') {
         requireCapability(engine, 'registerController', 'Controller contract is not enabled');
         const body = requireObject(await readJson(request));
+        security.requireController(request, body.controller_id);
         const before = engine.snapshot();
         const controller = engine.registerController(body);
         await persistMutation(engine, persist, before);
@@ -298,6 +331,7 @@ export function createApiServer({
 
       const route = controllerRoute(path);
       if (route && method === 'POST' && route.action === 'heartbeat') {
+        security.requireController(request, route.controllerId);
         requireCapability(engine, 'heartbeat', 'Controller contract is not enabled');
         const body = requireObject(await readJson(request));
         const before = engine.snapshot();
@@ -307,11 +341,13 @@ export function createApiServer({
       }
 
       if (route && method === 'GET' && route.action === 'configuration') {
+        security.requireController(request, route.controllerId);
         requireCapability(engine, 'controllerConfiguration', 'Controller contract is not enabled');
         return send(200, engine.controllerConfiguration(route.controllerId));
       }
 
       if (route && method === 'GET' && route.action === 'commands') {
+        security.requireController(request, route.controllerId);
         requireCapability(engine, 'controllerCommands', 'Controller contract is not enabled');
         const before = engine.snapshot();
         const commands = engine.controllerCommands(route.controllerId);
@@ -320,6 +356,7 @@ export function createApiServer({
       }
 
       if (route && method === 'POST' && route.action === 'telemetry') {
+        security.requireController(request, route.controllerId);
         requireCapability(engine, 'ingestControllerTelemetry', 'Controller contract is not enabled');
         const body = requireObject(await readJson(request));
         const samples = Array.isArray(body.samples) ? body.samples : [body];
@@ -332,6 +369,7 @@ export function createApiServer({
       }
 
       if (route && method === 'POST' && route.action === 'command-acks') {
+        security.requireController(request, route.controllerId);
         requireCapability(engine, 'acknowledge', 'Controller contract is not enabled');
         const body = requireObject(await readJson(request));
         if (body.controller_id && body.controller_id !== route.controllerId) {
@@ -344,6 +382,7 @@ export function createApiServer({
       }
 
       if (method === 'POST' && path === '/telemetry') {
+        security.requireOperator(request);
         const body = requireObject(await readJson(request));
         const samples = Array.isArray(body.samples) ? body.samples : [body];
         if (samples.length === 0) throw badRequest('At least one telemetry sample is required');
@@ -357,6 +396,7 @@ export function createApiServer({
       }
 
       if (method === 'POST' && path === '/mode') {
+        security.requireOperator(request);
         const body = requireObject(await readJson(request));
         const before = engine.snapshot();
         engine.setMode(body.mode);
@@ -365,6 +405,7 @@ export function createApiServer({
       }
 
       if (method === 'POST' && path === '/connectivity') {
+        security.requireOperator(request);
         const body = requireObject(await readJson(request));
         if (typeof body.connected !== 'boolean') throw badRequest('connected must be boolean');
         const before = engine.snapshot();
@@ -374,6 +415,7 @@ export function createApiServer({
       }
 
       if (method === 'POST' && path === '/manual-commands') {
+        security.requireOperator(request);
         const body = requireObject(await readJson(request));
         if (typeof body.actuator_id !== 'string' || typeof body.action !== 'string') {
           throw badRequest('actuator_id and action are required strings');
@@ -385,6 +427,7 @@ export function createApiServer({
       }
 
       if (method === 'POST' && path === '/command-acks') {
+        security.requireOperator(request);
         const body = requireObject(await readJson(request));
         const before = engine.snapshot();
         const command = engine.acknowledge(body);
@@ -393,6 +436,7 @@ export function createApiServer({
       }
 
       if (method === 'POST' && path === '/evaluate') {
+        security.requireOperator(request);
         const before = engine.snapshot();
         const commands = engine.evaluate();
         await persistMutation(engine, persist, before);
@@ -410,7 +454,7 @@ export function createApiServer({
       const statusCode = Number.isInteger(error.statusCode) ? error.statusCode : 400;
       if (statusCode >= 500) logger.error?.(error);
       return send(statusCode, {
-        error: statusCode >= 500 ? 'INTERNAL_ERROR' : statusCode === 404 ? 'NOT_FOUND' : 'INVALID_REQUEST',
+        error: errorCode(statusCode),
         message: error.message
       });
     }
