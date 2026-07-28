@@ -52,6 +52,16 @@ function eventLimit(requestUrl) {
   return parsed;
 }
 
+function controllerRoute(path) {
+  const match = path.match(/^\/controllers\/([^/]+)\/(heartbeat|commands|configuration|telemetry|command-acks)$/);
+  if (!match) return null;
+  return { controllerId: decodeURIComponent(match[1]), action: match[2] };
+}
+
+function requireCapability(engine, method) {
+  if (typeof engine[method] !== 'function') throw badRequest('Controller contract is not enabled', 501);
+}
+
 async function persistMutation(engine, persist, before) {
   try {
     await persist(engine.snapshot());
@@ -82,7 +92,7 @@ export function createApiServer({
         return sendJson(response, 200, {
           status: 'ok',
           service: 'greencore-core',
-          version: '0.1.0'
+          version: '0.2.0'
         });
       }
 
@@ -97,6 +107,70 @@ export function createApiServer({
       if (method === 'GET' && path === '/events') {
         const limit = eventLimit(requestUrl);
         return sendJson(response, 200, { events: engine.events.slice(-limit) });
+      }
+
+      if (method === 'GET' && path === '/controllers') {
+        requireCapability(engine, 'listControllers');
+        return sendJson(response, 200, { controllers: engine.listControllers() });
+      }
+
+      if (method === 'POST' && path === '/controllers/register') {
+        requireCapability(engine, 'registerController');
+        const body = requireObject(await readJson(request));
+        const before = engine.snapshot();
+        const controller = engine.registerController(body);
+        await persistMutation(engine, persist, before);
+        return sendJson(response, 201, {
+          controller,
+          configuration: engine.controllerConfiguration(controller.controller_id)
+        });
+      }
+
+      const route = controllerRoute(path);
+      if (route && method === 'POST' && route.action === 'heartbeat') {
+        requireCapability(engine, 'heartbeat');
+        const body = requireObject(await readJson(request));
+        const before = engine.snapshot();
+        const controller = engine.heartbeat(route.controllerId, body);
+        await persistMutation(engine, persist, before);
+        return sendJson(response, 200, { controller });
+      }
+
+      if (route && method === 'GET' && route.action === 'configuration') {
+        requireCapability(engine, 'controllerConfiguration');
+        return sendJson(response, 200, engine.controllerConfiguration(route.controllerId));
+      }
+
+      if (route && method === 'GET' && route.action === 'commands') {
+        requireCapability(engine, 'controllerCommands');
+        const before = engine.snapshot();
+        const commands = engine.controllerCommands(route.controllerId);
+        await persistMutation(engine, persist, before);
+        return sendJson(response, 200, { commands });
+      }
+
+      if (route && method === 'POST' && route.action === 'telemetry') {
+        requireCapability(engine, 'ingestControllerTelemetry');
+        const body = requireObject(await readJson(request));
+        const samples = Array.isArray(body.samples) ? body.samples : [body];
+        if (samples.length === 0) throw badRequest('At least one telemetry sample is required');
+        if (samples.length > 100) throw badRequest('Maximum 100 telemetry samples per request', 413);
+        const before = engine.snapshot();
+        const accepted = engine.ingestControllerTelemetry(route.controllerId, samples);
+        await persistMutation(engine, persist, before);
+        return sendJson(response, 202, { accepted });
+      }
+
+      if (route && method === 'POST' && route.action === 'command-acks') {
+        requireCapability(engine, 'acknowledge');
+        const body = requireObject(await readJson(request));
+        if (body.controller_id && body.controller_id !== route.controllerId) {
+          throw badRequest('controller_id does not match request path');
+        }
+        const before = engine.snapshot();
+        const command = engine.acknowledge({ ...body, controller_id: route.controllerId });
+        await persistMutation(engine, persist, before);
+        return sendJson(response, 200, { acknowledged: true, command });
       }
 
       if (method === 'POST' && path === '/telemetry') {
