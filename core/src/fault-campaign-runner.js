@@ -143,16 +143,21 @@ export class FaultCampaignRunner extends ScenarioRunner {
     }
   }
 
+  sendHeartbeat() {
+    if (!this.controllerOnline) return null;
+    return this.runtime.heartbeat(this.controllerId, {
+      uptime_seconds: this.elapsedSeconds,
+      queue_size: this.engine.pendingCommands.size,
+      timestamp: this.clock.now().toISOString()
+    });
+  }
+
   runStep(seconds = this.stepSeconds) {
     if (!Number.isFinite(seconds) || seconds <= 0) throw new Error('seconds must be positive');
     this.applyDueFaultEvents();
 
     if (this.controllerOnline) {
-      this.runtime.heartbeat(this.controllerId, {
-        uptime_seconds: this.elapsedSeconds,
-        queue_size: this.engine.pendingCommands.size,
-        timestamp: this.clock.now().toISOString()
-      });
+      this.sendHeartbeat();
       this.runtime.ingestControllerTelemetry(this.controllerId, this.telemetrySamples());
     }
 
@@ -173,6 +178,7 @@ export class FaultCampaignRunner extends ScenarioRunner {
     this.clock.advance(seconds);
     this.elapsedSeconds += seconds;
     this.stepNumber += 1;
+    this.sendHeartbeat();
     this.captureExtrema();
     if (this.stepNumber % this.recordEverySteps === 0) this.record();
     return {
