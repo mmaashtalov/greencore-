@@ -1,13 +1,19 @@
-import { ControllerEmulator } from './controller-emulator.js';
+import { DigitalTwinControllerEmulator } from './digital-twin-controller.js';
 
-const emulator = new ControllerEmulator({
+const simulationSpeed = Number(process.env.SIMULATION_SPEED ?? 1);
+const scenarioPreset = process.env.DIGITAL_TWIN_PRESET ?? 'normal';
+
+const emulator = new DigitalTwinControllerEmulator({
   baseUrl: process.env.GREENCORE_URL ?? 'http://127.0.0.1:3000',
   controllerId: process.env.CONTROLLER_ID ?? 'controller_primary',
-  firmware: process.env.CONTROLLER_FIRMWARE ?? 'emulator-1.0.0'
+  firmware: process.env.CONTROLLER_FIRMWARE ?? 'emulator-2.0.0',
+  simulationSpeed,
+  scenarioPreset
 });
 
 await emulator.start();
 console.log(`Controller emulator ${emulator.controllerId} connected to ${emulator.baseUrl}`);
+console.log(`Digital twin preset=${scenarioPreset}, simulation speed=x${simulationSpeed}`);
 
 for (const signal of ['SIGINT', 'SIGTERM']) {
   process.once(signal, () => {
