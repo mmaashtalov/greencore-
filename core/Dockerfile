@@ -4,6 +4,7 @@ ENV NODE_ENV=production \
     HOST=0.0.0.0 \
     PORT=3000 \
     STATE_FILE=/app/data/state.json \
+    HISTORY_DATABASE=/app/data/history.sqlite \
     SIMULATION_STATE_FILE=/app/data/simulations.json
 
 WORKDIR /app

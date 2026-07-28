@@ -63,6 +63,15 @@ function boundedLimit(requestUrl, { defaultValue, maximum }) {
   return parsed;
 }
 
+function queryFilters(requestUrl, names, { defaultLimit = 200, maximumLimit = 5000 } = {}) {
+  const filters = { limit: boundedLimit(requestUrl, { defaultValue: defaultLimit, maximum: maximumLimit }) };
+  for (const name of names) {
+    const value = requestUrl.searchParams.get(name);
+    if (value !== null && value !== '') filters[name] = value;
+  }
+  return filters;
+}
+
 function controllerRoute(path) {
   const match = path.match(/^\/controllers\/([^/]+)\/(heartbeat|commands|configuration|telemetry|command-acks)$/);
   if (!match) return null;
@@ -105,6 +114,7 @@ async function persistSimulationMutation(simulations, persistSimulations, before
 export function createApiServer({
   engine,
   simulations = null,
+  history = null,
   logger = console,
   persist = async () => {},
   persistSimulations = async () => {},
@@ -127,11 +137,13 @@ export function createApiServer({
       if (method === 'OPTIONS') return sendEmpty(response, 204, allowedOrigin);
 
       if (method === 'GET' && path === '/health') {
-        return send(200, {
-          status: 'ok',
+        const historyStatus = typeof history?.stats === 'function' ? history.stats() : null;
+        return send(historyStatus?.healthy === false ? 503 : 200, {
+          status: historyStatus?.healthy === false ? 'degraded' : 'ok',
           service: 'greencore-core',
-          version: '0.8.0',
-          simulations_enabled: Boolean(simulations)
+          version: '0.9.0',
+          simulations_enabled: Boolean(simulations),
+          history: historyStatus
         });
       }
 
@@ -146,6 +158,35 @@ export function createApiServer({
       if (method === 'GET' && path === '/events') {
         const limit = boundedLimit(requestUrl, { defaultValue: 100, maximum: 1000 });
         return send(200, { events: engine.events.slice(-limit) });
+      }
+
+      if (method === 'GET' && path === '/history/stats') {
+        requireCapability(history, 'stats', 'History database is not enabled');
+        return send(200, history.stats());
+      }
+
+      if (method === 'GET' && path === '/history/telemetry') {
+        requireCapability(history, 'telemetry', 'History database is not enabled');
+        const filters = queryFilters(requestUrl, ['metric', 'device_id', 'controller_id', 'quality', 'from', 'to']);
+        return send(200, { samples: history.telemetry(filters) });
+      }
+
+      if (method === 'GET' && path === '/history/events') {
+        requireCapability(history, 'events', 'History database is not enabled');
+        const filters = queryFilters(requestUrl, ['type', 'from', 'to']);
+        return send(200, { events: history.events(filters) });
+      }
+
+      if (method === 'GET' && path === '/history/alerts') {
+        requireCapability(history, 'alerts', 'History database is not enabled');
+        const filters = queryFilters(requestUrl, ['type', 'from', 'to']);
+        return send(200, { alerts: history.alerts(filters) });
+      }
+
+      if (method === 'GET' && path === '/history/commands') {
+        requireCapability(history, 'commands', 'History database is not enabled');
+        const filters = queryFilters(requestUrl, ['status', 'actuator_id', 'controller_id', 'action', 'from', 'to']);
+        return send(200, { commands: history.commands(filters) });
       }
 
       if (method === 'GET' && path === '/simulations/catalog') {
