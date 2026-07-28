@@ -1,0 +1,32 @@
+services:
+  greencore-core:
+    build:
+      context: ./core
+    image: ghcr.io/mmaashtalov/greencore-core:latest
+    restart: unless-stopped
+    ports:
+      - "3000:3000"
+    environment:
+      HOST: 0.0.0.0
+      PORT: 3000
+      STATE_FILE: /app/data/state.json
+      SIMULATION_STATE_FILE: /app/data/simulations.json
+      MAX_SIMULATION_REPORTS: 50
+      CORS_ORIGIN: "*"
+      AUTOMATION_ENABLED: "true"
+      EVALUATION_INTERVAL_MS: 5000
+    volumes:
+      - greencore-data:/app/data
+    healthcheck:
+      test:
+        - CMD
+        - node
+        - -e
+        - "fetch('http://127.0.0.1:3000/health').then(r=>{if(!r.ok)process.exit(1)}).catch(()=>process.exit(1))"
+      interval: 30s
+      timeout: 5s
+      start_period: 10s
+      retries: 3
+
+volumes:
+  greencore-data:
