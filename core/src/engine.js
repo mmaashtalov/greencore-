@@ -2,9 +2,13 @@ import crypto from 'node:crypto';
 
 const QUALITY = new Set(['GOOD', 'SUSPECT', 'BAD', 'MISSING']);
 const MODES = new Set(['AUTO', 'MANUAL', 'SAFE', 'OFFLINE']);
+const TERMINAL_ACK = new Set(['EXECUTED', 'REJECTED', 'EXPIRED', 'FAILED']);
 
 export class GreenCoreEngine {
   constructor({ contracts, rules, now = () => new Date() }) {
+    if (!contracts?.telemetry || !contracts?.command || !rules?.required_metrics) {
+      throw new Error('Invalid GreenCore configuration');
+    }
     this.contracts = contracts;
     this.rules = rules;
     this.now = now;
@@ -35,58 +39,80 @@ export class GreenCoreEngine {
   }
 
   requestManual(actuatorId, action, reason = 'manual operator request') {
+    if (!this.actuators.has(actuatorId)) throw new Error(`Unknown actuator: ${actuatorId}`);
     this.manualRequests.set(actuatorId, { action, reason, requestedAt: this.now().toISOString() });
   }
 
   ingest(sample) {
     const checked = this.validateTelemetry(sample);
     this.telemetry.set(checked.metric, checked);
-    this.log('TELEMETRY_ACCEPTED', { device_id: checked.device_id, metric: checked.metric, value: checked.value, quality: checked.quality });
+    this.log('TELEMETRY_ACCEPTED', {
+      device_id: checked.device_id,
+      metric: checked.metric,
+      value: checked.value,
+      quality: checked.quality
+    });
     return checked;
   }
 
   validateTelemetry(sample) {
-    const required = this.contracts.telemetry.required;
-    for (const field of required) {
-      if (sample?.[field] === undefined || sample?.[field] === null) throw new Error(`Telemetry missing field: ${field}`);
+    for (const field of this.contracts.telemetry.required) {
+      if (sample?.[field] === undefined || sample?.[field] === null) {
+        throw new Error(`Telemetry missing field: ${field}`);
+      }
     }
     const metric = this.contracts.telemetry.metrics[sample.metric];
     if (!metric) throw new Error(`Unsupported metric: ${sample.metric}`);
     if (sample.unit !== metric.unit) throw new Error(`Invalid unit for ${sample.metric}: ${sample.unit}`);
-    if (typeof sample.value !== 'number' || !Number.isFinite(sample.value)) throw new Error('Telemetry value must be a finite number');
-    if (sample.value < metric.min || sample.value > metric.max) throw new Error(`Telemetry value out of range for ${sample.metric}`);
+    if (typeof sample.value !== 'number' || !Number.isFinite(sample.value)) {
+      throw new Error('Telemetry value must be a finite number');
+    }
+    if (sample.value < metric.min || sample.value > metric.max) {
+      throw new Error(`Telemetry value out of range for ${sample.metric}`);
+    }
     if (!QUALITY.has(sample.quality)) throw new Error(`Invalid telemetry quality: ${sample.quality}`);
     const timestamp = new Date(sample.timestamp);
     if (Number.isNaN(timestamp.getTime())) throw new Error('Invalid telemetry timestamp');
     const futureMs = timestamp.getTime() - this.now().getTime();
-    if (futureMs > this.rules.telemetry.future_tolerance_seconds * 1000) throw new Error('Telemetry timestamp is too far in the future');
+    if (futureMs > this.rules.telemetry.future_tolerance_seconds * 1000) {
+      throw new Error('Telemetry timestamp is too far in the future');
+    }
     return { ...sample, timestamp: timestamp.toISOString() };
   }
 
   metricState(metricName) {
     const sample = this.telemetry.get(metricName);
     if (!sample) return { state: 'UNKNOWN', usable: false, sample: null };
-    if (sample.quality === 'BAD' || sample.quality === 'MISSING') return { state: 'FAULT', usable: false, sample };
+    if (sample.quality === 'BAD' || sample.quality === 'MISSING') {
+      return { state: 'FAULT', usable: false, sample };
+    }
     const ageSeconds = (this.now().getTime() - new Date(sample.timestamp).getTime()) / 1000;
-    if (ageSeconds > this.rules.telemetry.offline_after_seconds) return { state: 'OFFLINE', usable: false, sample };
-    if (ageSeconds > this.rules.telemetry.stale_after_seconds) return { state: 'STALE', usable: false, sample };
+    if (ageSeconds > this.rules.telemetry.offline_after_seconds) {
+      return { state: 'OFFLINE', usable: false, sample };
+    }
+    if (ageSeconds > this.rules.telemetry.stale_after_seconds) {
+      return { state: 'STALE', usable: false, sample };
+    }
     return { state: 'ONLINE', usable: sample.quality === 'GOOD', sample };
   }
 
   evaluate() {
     this.expireCommands();
-    const required = Object.fromEntries(this.rules.required_metrics.map(metric => [metric, this.metricState(metric)]));
+    const required = Object.fromEntries(
+      this.rules.required_metrics.map(metric => [metric, this.metricState(metric)])
+    );
     const hasInvalidRequired = Object.values(required).some(item => !item.usable);
-    const effectiveMode = !this.connected ? 'OFFLINE' : hasInvalidRequired ? 'SAFE' : this.mode;
 
-    if (effectiveMode === 'SAFE') {
-      this.raiseAlert('REQUIRED_TELEMETRY_UNAVAILABLE', { required });
-      return this.ensureSafeState('required telemetry unavailable or untrusted', effectiveMode);
+    if (hasInvalidRequired || this.mode === 'SAFE') {
+      if (hasInvalidRequired) this.raiseAlert('REQUIRED_TELEMETRY_UNAVAILABLE', { required });
+      return this.ensureSafeState(
+        hasInvalidRequired ? 'required telemetry unavailable or untrusted' : 'safe mode requested',
+        'SAFE'
+      );
     }
 
-    if (effectiveMode === 'OFFLINE') {
-      this.log('LOCAL_OFFLINE_AUTOMATION', {});
-    }
+    const effectiveMode = !this.connected ? 'OFFLINE' : this.mode;
+    if (effectiveMode === 'OFFLINE') this.log('LOCAL_OFFLINE_AUTOMATION', {});
 
     if (this.pumpRuntimeExceeded()) {
       this.raiseAlert('PUMP_RUNTIME_LIMIT_EXCEEDED', {});
@@ -100,7 +126,11 @@ export class GreenCoreEngine {
   applyManualRequests(required, effectiveMode) {
     const commands = [];
     for (const [actuatorId, request] of this.manualRequests) {
-      if (actuatorId === 'pump_01' && request.action === 'ON' && required.water_level.sample.value < this.rules.water_level.minimum_for_pump_percent) {
+      if (
+        actuatorId === 'pump_01' &&
+        request.action === 'ON' &&
+        required.water_level.sample.value < this.rules.water_level.minimum_for_pump_percent
+      ) {
         this.raiseAlert('MANUAL_COMMAND_REJECTED_LOW_WATER', { actuatorId });
         commands.push(this.issue('pump_01', 'OFF', 'manual pump request rejected: water level too low', effectiveMode));
       } else {
@@ -140,8 +170,7 @@ export class GreenCoreEngine {
     const commands = [];
     for (const [id, actuator] of this.actuators) {
       const safeAction = actuator.type === 'vent' ? 'OPEN' : 'OFF';
-      const expectedState = actuator.type === 'vent' ? 'OPEN' : 'OFF';
-      if (actuator.state !== expectedState) commands.push(this.issue(id, safeAction, reason, effectiveMode));
+      if (actuator.state !== safeAction) commands.push(this.issue(id, safeAction, reason, effectiveMode));
     }
     return commands.filter(Boolean);
   }
@@ -171,16 +200,22 @@ export class GreenCoreEngine {
   }
 
   acknowledge(ack) {
+    if (!ack?.command_id || !ack?.status) throw new Error('Invalid acknowledgement payload');
     const command = this.pendingCommands.get(ack.command_id);
     if (!command) throw new Error(`Unknown or completed command: ${ack.command_id}`);
+    if (ack.actuator_id && ack.actuator_id !== command.actuator_id) {
+      throw new Error(`Acknowledgement actuator mismatch: ${ack.actuator_id}`);
+    }
     if (new Date(command.expires_at) < this.now()) throw new Error(`Command expired: ${ack.command_id}`);
-    if (!this.contracts.command.ack_status.includes(ack.status)) throw new Error(`Unsupported acknowledgement status: ${ack.status}`);
+    if (!this.contracts.command.ack_status.includes(ack.status)) {
+      throw new Error(`Unsupported acknowledgement status: ${ack.status}`);
+    }
     if (ack.status === 'EXECUTED') {
       const actuator = this.actuators.get(command.actuator_id);
       actuator.state = command.action === 'CLOSE' ? 'CLOSED' : command.action;
       actuator.changedAt = new Date(ack.timestamp ?? this.now()).toISOString();
     }
-    if (['EXECUTED', 'REJECTED', 'EXPIRED', 'FAILED'].includes(ack.status)) this.pendingCommands.delete(command.command_id);
+    if (TERMINAL_ACK.has(ack.status)) this.pendingCommands.delete(command.command_id);
     this.log('COMMAND_ACKNOWLEDGED', { ...ack, actuator_id: command.actuator_id });
     return command;
   }
@@ -215,9 +250,10 @@ export class GreenCoreEngine {
   snapshot() {
     return {
       configured_mode: this.mode,
+      effective_mode: !this.connected && this.mode !== 'SAFE' ? 'OFFLINE' : this.mode,
       connected: this.connected,
-      telemetry: Object.fromEntries([...this.telemetry.entries()]),
-      actuators: Object.fromEntries([...this.actuators.entries()]),
+      telemetry: Object.fromEntries(this.telemetry),
+      actuators: Object.fromEntries(this.actuators),
       pending_commands: [...this.pendingCommands.values()],
       alerts: [...this.alerts],
       events: [...this.events]
