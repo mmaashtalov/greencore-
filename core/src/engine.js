@@ -3,15 +3,44 @@ import crypto from 'node:crypto';
 const QUALITY = new Set(['GOOD', 'SUSPECT', 'BAD', 'MISSING']);
 const MODES = new Set(['AUTO', 'MANUAL', 'SAFE', 'OFFLINE']);
 const TERMINAL_ACK = new Set(['EXECUTED', 'REJECTED', 'EXPIRED', 'FAILED']);
+const ACTIONS_BY_TYPE = {
+  pump: new Set(['ON', 'OFF']),
+  fan: new Set(['ON', 'OFF']),
+  vent: new Set(['OPEN', 'CLOSE'])
+};
+const STATES_BY_TYPE = {
+  pump: new Set(['ON', 'OFF']),
+  fan: new Set(['ON', 'OFF']),
+  vent: new Set(['OPEN', 'CLOSED'])
+};
+
+function isObject(value) {
+  return Boolean(value) && typeof value === 'object' && !Array.isArray(value);
+}
+
+function validDate(value) {
+  if (value === null) return true;
+  return typeof value === 'string' && !Number.isNaN(new Date(value).getTime());
+}
 
 export class GreenCoreEngine {
-  constructor({ contracts, rules, now = () => new Date() }) {
+  constructor({
+    contracts,
+    rules,
+    now = () => new Date(),
+    limits = {}
+  }) {
     if (!contracts?.telemetry || !contracts?.command || !rules?.required_metrics) {
       throw new Error('Invalid GreenCore configuration');
     }
     this.contracts = contracts;
     this.rules = rules;
     this.now = now;
+    this.limits = {
+      events: limits.events ?? 5000,
+      alerts: limits.alerts ?? 1000,
+      idempotencyKeys: limits.idempotencyKeys ?? 10000
+    };
     this.mode = 'SAFE';
     this.connected = true;
     this.telemetry = new Map();
@@ -39,8 +68,17 @@ export class GreenCoreEngine {
   }
 
   requestManual(actuatorId, action, reason = 'manual operator request') {
-    if (!this.actuators.has(actuatorId)) throw new Error(`Unknown actuator: ${actuatorId}`);
-    this.manualRequests.set(actuatorId, { action, reason, requestedAt: this.now().toISOString() });
+    const actuator = this.actuators.get(actuatorId);
+    if (!actuator) throw new Error(`Unknown actuator: ${actuatorId}`);
+    this.validateAction(actuator.type, action);
+    const requestedAt = this.now();
+    this.manualRequests.set(actuatorId, {
+      action,
+      reason,
+      requestedAt: requestedAt.toISOString(),
+      expiresAt: new Date(requestedAt.getTime() + this.rules.commands.ttl_seconds * 1000).toISOString()
+    });
+    this.log('MANUAL_REQUEST_QUEUED', { actuator_id: actuatorId, action, reason });
   }
 
   ingest(sample) {
@@ -98,6 +136,7 @@ export class GreenCoreEngine {
 
   evaluate() {
     this.expireCommands();
+    this.expireManualRequests();
     const required = Object.fromEntries(
       this.rules.required_metrics.map(metric => [metric, this.metricState(metric)])
     );
@@ -121,6 +160,15 @@ export class GreenCoreEngine {
 
     if (effectiveMode === 'MANUAL') return this.applyManualRequests(required, effectiveMode);
     return this.applyAutomaticRules(required, effectiveMode);
+  }
+
+  expireManualRequests() {
+    for (const [actuatorId, request] of this.manualRequests) {
+      if (new Date(request.expiresAt) < this.now()) {
+        this.manualRequests.delete(actuatorId);
+        this.raiseAlert('MANUAL_REQUEST_EXPIRED', { actuator_id: actuatorId });
+      }
+    }
   }
 
   applyManualRequests(required, effectiveMode) {
@@ -170,19 +218,28 @@ export class GreenCoreEngine {
     const commands = [];
     for (const [id, actuator] of this.actuators) {
       const safeAction = actuator.type === 'vent' ? 'OPEN' : 'OFF';
-      if (actuator.state !== safeAction) commands.push(this.issue(id, safeAction, reason, effectiveMode));
+      const expectedState = actuator.type === 'vent' ? 'OPEN' : 'OFF';
+      if (actuator.state !== expectedState) commands.push(this.issue(id, safeAction, reason, effectiveMode));
     }
     return commands.filter(Boolean);
+  }
+
+  validateAction(actuatorType, action) {
+    if (!ACTIONS_BY_TYPE[actuatorType]?.has(action)) {
+      throw new Error(`Unsupported action ${action} for actuator type ${actuatorType}`);
+    }
   }
 
   issue(actuatorId, action, reason, effectiveMode) {
     const actuator = this.actuators.get(actuatorId);
     if (!actuator) throw new Error(`Unknown actuator: ${actuatorId}`);
+    this.validateAction(actuator.type, action);
     const issuedAt = this.now();
     const bucket = issuedAt.toISOString().slice(0, 16);
     const idempotencyKey = `${actuatorId}:${action}:${bucket}`;
     if (this.seenIdempotencyKeys.has(idempotencyKey)) return null;
     this.seenIdempotencyKeys.add(idempotencyKey);
+    this.trimSet(this.seenIdempotencyKeys, this.limits.idempotencyKeys);
     const command = {
       command_id: `cmd_${crypto.randomUUID()}`,
       actuator_id: actuatorId,
@@ -240,21 +297,142 @@ export class GreenCoreEngine {
     if (last?.type === type && JSON.stringify(last.details) === JSON.stringify(details)) return;
     const alert = { type, details, timestamp: this.now().toISOString() };
     this.alerts.push(alert);
+    this.trimArray(this.alerts, this.limits.alerts);
     this.log('ALERT_RAISED', alert);
   }
 
   log(type, details) {
     this.events.push({ type, details, timestamp: this.now().toISOString() });
+    this.trimArray(this.events, this.limits.events);
+  }
+
+  trimArray(items, limit) {
+    if (items.length > limit) items.splice(0, items.length - limit);
+  }
+
+  trimSet(items, limit) {
+    while (items.size > limit) items.delete(items.values().next().value);
+  }
+
+  validatePersistentEvent(entry, label) {
+    if (!isObject(entry) || typeof entry.type !== 'string' || !validDate(entry.timestamp)) {
+      throw new Error(`Invalid persisted ${label}`);
+    }
+    return structuredClone(entry);
+  }
+
+  validatePersistentCommand(command) {
+    if (!isObject(command)) throw new Error('Invalid persisted command');
+    for (const field of this.contracts.command.required) {
+      if (command[field] === undefined || command[field] === null) {
+        throw new Error(`Persisted command missing field: ${field}`);
+      }
+    }
+    const actuator = this.actuators.get(command.actuator_id);
+    if (!actuator || actuator.type !== command.actuator_type) {
+      throw new Error(`Invalid persisted command actuator: ${command.actuator_id}`);
+    }
+    this.validateAction(command.actuator_type, command.action);
+    if (!validDate(command.issued_at) || !validDate(command.expires_at)) {
+      throw new Error(`Invalid persisted command timestamps: ${command.command_id}`);
+    }
+    return structuredClone(command);
+  }
+
+  restore(snapshot, { logEvent = true } = {}) {
+    if (!isObject(snapshot)) throw new Error('Invalid persisted GreenCore state');
+    if (!MODES.has(snapshot.configured_mode)) throw new Error('Invalid persisted mode');
+    if (typeof snapshot.connected !== 'boolean') throw new Error('Invalid persisted connectivity');
+    if (!isObject(snapshot.telemetry) || !isObject(snapshot.actuators)) {
+      throw new Error('Invalid persisted telemetry or actuators');
+    }
+
+    const telemetry = new Map();
+    for (const [metric, sample] of Object.entries(snapshot.telemetry)) {
+      const checked = this.validateTelemetry(sample);
+      if (checked.metric !== metric) throw new Error(`Persisted telemetry key mismatch: ${metric}`);
+      telemetry.set(metric, checked);
+    }
+
+    const actuators = new Map();
+    for (const [id, current] of this.actuators) {
+      const saved = snapshot.actuators[id];
+      if (!isObject(saved) || saved.type !== current.type || !validDate(saved.changedAt)) {
+        throw new Error(`Invalid persisted actuator: ${id}`);
+      }
+      if (!STATES_BY_TYPE[saved.type]?.has(saved.state)) {
+        throw new Error(`Invalid persisted actuator state: ${id}`);
+      }
+      actuators.set(id, { type: saved.type, state: saved.state, changedAt: saved.changedAt });
+    }
+
+    const pendingCommands = new Map();
+    const expiredCommands = [];
+    for (const raw of snapshot.pending_commands ?? []) {
+      const command = this.validatePersistentCommand(raw);
+      if (new Date(command.expires_at) < this.now()) expiredCommands.push(command.command_id);
+      else pendingCommands.set(command.command_id, command);
+    }
+
+    const manualRequests = new Map();
+    const expiredManual = [];
+    for (const [actuatorId, request] of Object.entries(snapshot.manual_requests ?? {})) {
+      const actuator = actuators.get(actuatorId);
+      if (!actuator || !isObject(request) || typeof request.reason !== 'string') {
+        throw new Error(`Invalid persisted manual request: ${actuatorId}`);
+      }
+      this.validateAction(actuator.type, request.action);
+      if (!validDate(request.requestedAt) || !validDate(request.expiresAt)) {
+        throw new Error(`Invalid persisted manual request timestamps: ${actuatorId}`);
+      }
+      if (new Date(request.expiresAt) < this.now()) expiredManual.push(actuatorId);
+      else manualRequests.set(actuatorId, structuredClone(request));
+    }
+
+    const events = (snapshot.events ?? []).map(entry => this.validatePersistentEvent(entry, 'event'));
+    const alerts = (snapshot.alerts ?? []).map(entry => this.validatePersistentEvent(entry, 'alert'));
+    const keys = snapshot.seen_idempotency_keys ?? [];
+    if (!Array.isArray(keys) || keys.some(key => typeof key !== 'string')) {
+      throw new Error('Invalid persisted idempotency keys');
+    }
+
+    this.mode = snapshot.configured_mode;
+    this.connected = snapshot.connected;
+    this.telemetry = telemetry;
+    this.actuators = actuators;
+    this.pendingCommands = pendingCommands;
+    this.manualRequests = manualRequests;
+    this.events = events.slice(-this.limits.events);
+    this.alerts = alerts.slice(-this.limits.alerts);
+    this.seenIdempotencyKeys = new Set(keys.slice(-this.limits.idempotencyKeys));
+
+    for (const commandId of expiredCommands) {
+      this.raiseAlert('COMMAND_DROPPED_ON_RESTORE_EXPIRED', { command_id: commandId });
+    }
+    for (const actuatorId of expiredManual) {
+      this.raiseAlert('MANUAL_REQUEST_DROPPED_ON_RESTORE_EXPIRED', { actuator_id: actuatorId });
+    }
+    if (logEvent) {
+      this.log('STATE_RESTORED', {
+        telemetry_count: telemetry.size,
+        pending_command_count: pendingCommands.size,
+        manual_request_count: manualRequests.size
+      });
+    }
+    return this.snapshot();
   }
 
   snapshot() {
     return {
+      state_version: 1,
       configured_mode: this.mode,
       effective_mode: !this.connected && this.mode !== 'SAFE' ? 'OFFLINE' : this.mode,
       connected: this.connected,
       telemetry: Object.fromEntries(this.telemetry),
       actuators: Object.fromEntries(this.actuators),
       pending_commands: [...this.pendingCommands.values()],
+      manual_requests: Object.fromEntries(this.manualRequests),
+      seen_idempotency_keys: [...this.seenIdempotencyKeys],
       alerts: [...this.alerts],
       events: [...this.events]
     };

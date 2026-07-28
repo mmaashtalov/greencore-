@@ -52,8 +52,25 @@ function eventLimit(requestUrl) {
   return parsed;
 }
 
-export function createApiServer({ engine, logger = console }) {
+async function persistMutation(engine, persist, before) {
+  try {
+    await persist(engine.snapshot());
+  } catch (cause) {
+    engine.restore(before, { logEvent: false });
+    const error = new Error('State persistence failed');
+    error.statusCode = 500;
+    error.cause = cause;
+    throw error;
+  }
+}
+
+export function createApiServer({
+  engine,
+  logger = console,
+  persist = async () => {}
+}) {
   if (!engine) throw new Error('engine is required');
+  if (typeof persist !== 'function') throw new Error('persist must be a function');
 
   return http.createServer(async (request, response) => {
     const requestUrl = new URL(request.url ?? '/', 'http://localhost');
@@ -88,22 +105,27 @@ export function createApiServer({ engine, logger = console }) {
         if (samples.length === 0) throw badRequest('At least one telemetry sample is required');
         if (samples.length > 100) throw badRequest('Maximum 100 telemetry samples per request', 413);
 
-        // Validate the complete batch before mutating engine state.
         const validated = samples.map(sample => engine.validateTelemetry(sample));
+        const before = engine.snapshot();
         const accepted = validated.map(sample => engine.ingest(sample));
+        await persistMutation(engine, persist, before);
         return sendJson(response, 202, { accepted });
       }
 
       if (method === 'POST' && path === '/mode') {
         const body = requireObject(await readJson(request));
+        const before = engine.snapshot();
         engine.setMode(body.mode);
+        await persistMutation(engine, persist, before);
         return sendJson(response, 200, { configured_mode: engine.mode });
       }
 
       if (method === 'POST' && path === '/connectivity') {
         const body = requireObject(await readJson(request));
         if (typeof body.connected !== 'boolean') throw badRequest('connected must be boolean');
+        const before = engine.snapshot();
         engine.setConnectivity(body.connected);
+        await persistMutation(engine, persist, before);
         return sendJson(response, 200, { connected: engine.connected });
       }
 
@@ -112,18 +134,24 @@ export function createApiServer({ engine, logger = console }) {
         if (typeof body.actuator_id !== 'string' || typeof body.action !== 'string') {
           throw badRequest('actuator_id and action are required strings');
         }
+        const before = engine.snapshot();
         engine.requestManual(body.actuator_id, body.action, body.reason);
+        await persistMutation(engine, persist, before);
         return sendJson(response, 202, { queued: true });
       }
 
       if (method === 'POST' && path === '/command-acks') {
         const body = requireObject(await readJson(request));
+        const before = engine.snapshot();
         const command = engine.acknowledge(body);
+        await persistMutation(engine, persist, before);
         return sendJson(response, 200, { acknowledged: true, command });
       }
 
       if (method === 'POST' && path === '/evaluate') {
+        const before = engine.snapshot();
         const commands = engine.evaluate();
+        await persistMutation(engine, persist, before);
         return sendJson(response, 200, {
           commands,
           effective_state: engine.snapshot()
