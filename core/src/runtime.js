@@ -186,9 +186,11 @@ export class GreenCoreRuntime {
 
   snapshot() {
     const controllerState = this.registry.snapshot();
+    const engineState = this.engine.snapshot();
     return {
-      ...this.engine.snapshot(),
+      ...engineState,
       state_version: 3,
+      mode: engineState.effective_mode,
       controllers: controllerState.controllers,
       device_owners: controllerState.device_owners,
       controller_contract: {
