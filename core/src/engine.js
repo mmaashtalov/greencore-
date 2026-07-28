@@ -1,4 +1,5 @@
 import crypto from 'node:crypto';
+import { PolicyEngine } from './policy-engine.js';
 
 const QUALITY = new Set(['GOOD', 'SUSPECT', 'BAD', 'MISSING']);
 const MODES = new Set(['AUTO', 'MANUAL', 'SAFE', 'OFFLINE']);
@@ -39,8 +40,10 @@ export class GreenCoreEngine {
     this.limits = {
       events: limits.events ?? 5000,
       alerts: limits.alerts ?? 1000,
-      idempotencyKeys: limits.idempotencyKeys ?? 10000
+      idempotencyKeys: limits.idempotencyKeys ?? 10000,
+      policyDecisions: limits.policyDecisions ?? 2000
     };
+    this.policyEngine = new PolicyEngine({ config: rules.policy_set, now });
     this.mode = 'SAFE';
     this.connected = true;
     this.telemetry = new Map();
@@ -54,6 +57,7 @@ export class GreenCoreEngine {
     this.events = [];
     this.alerts = [];
     this.manualRequests = new Map();
+    this.policyDecisions = [];
   }
 
   setConnectivity(connected) {
@@ -134,6 +138,111 @@ export class GreenCoreEngine {
     return { state: 'ONLINE', usable: sample.quality === 'GOOD', sample };
   }
 
+  policyTelemetryState(metricName, evaluatedAt) {
+    const metric = this.metricState(metricName);
+    const timestamp = metric.sample?.timestamp ? new Date(metric.sample.timestamp) : null;
+    return {
+      state: metric.state,
+      usable: metric.usable,
+      value: metric.sample?.value ?? null,
+      quality: metric.sample?.quality ?? null,
+      age_seconds: timestamp ? Math.max(0, (evaluatedAt.getTime() - timestamp.getTime()) / 1000) : null
+    };
+  }
+
+  policyContext({ actuatorId, action, reason, effectiveMode, source }) {
+    const actuator = this.actuators.get(actuatorId);
+    if (!actuator) throw new Error(`Unknown actuator: ${actuatorId}`);
+    this.validateAction(actuator.type, action);
+    const evaluatedAt = this.now();
+    const metrics = new Set([...this.rules.required_metrics, 'air_temperature', 'soil_moisture', 'water_level']);
+    const telemetry = Object.fromEntries(
+      [...metrics].map(metric => [metric, this.policyTelemetryState(metric, evaluatedAt)])
+    );
+    const changedAt = actuator.changedAt ? new Date(actuator.changedAt) : null;
+    return {
+      command: {
+        actuator_id: actuatorId,
+        actuator_type: actuator.type,
+        action,
+        reason,
+        source
+      },
+      mode: {
+        configured: this.mode,
+        effective: effectiveMode
+      },
+      connectivity: {
+        connected: this.connected
+      },
+      actuator: {
+        id: actuatorId,
+        type: actuator.type,
+        state: actuator.state,
+        changed_at: actuator.changedAt,
+        changed_at_present: Boolean(actuator.changedAt),
+        state_age_seconds: changedAt ? Math.max(0, (evaluatedAt.getTime() - changedAt.getTime()) / 1000) : null
+      },
+      required_telemetry_usable: this.rules.required_metrics.every(metric => telemetry[metric]?.usable === true),
+      pump_runtime_exceeded: this.pumpRuntimeExceeded(),
+      telemetry,
+      rules: this.rules
+    };
+  }
+
+  policyCatalog() {
+    return this.policyEngine.catalog();
+  }
+
+  policyDecisionHistory(limit = 100) {
+    if (!Number.isInteger(limit) || limit < 1) throw new Error('Policy decision limit must be a positive integer');
+    return this.policyDecisions.slice(-Math.min(limit, this.limits.policyDecisions)).map(item => structuredClone(item));
+  }
+
+  previewPolicy({ actuator_id: actuatorId, action, reason = 'policy preview', source = 'MANUAL', effective_mode: effectiveMode } = {}) {
+    const resolvedMode = effectiveMode ?? (!this.connected ? 'OFFLINE' : this.mode);
+    return this.policyEngine.evaluate(this.policyContext({
+      actuatorId,
+      action,
+      reason,
+      effectiveMode: resolvedMode,
+      source
+    }));
+  }
+
+  recordPolicyDecision(decision) {
+    const checked = this.policyEngine.validateDecision(decision);
+    this.policyDecisions.push(checked);
+    this.trimArray(this.policyDecisions, this.limits.policyDecisions);
+    this.log('POLICY_DECISION_RECORDED', {
+      decision_id: checked.decision_id,
+      effect: checked.effect,
+      policy_id: checked.policy_id,
+      summary: checked.summary,
+      command: checked.context.command,
+      evidence: checked.evidence
+    });
+    if (checked.effect === 'DENY') {
+      this.raiseAlert(checked.alert_type ?? 'POLICY_COMMAND_DENIED', {
+        decision_id: checked.decision_id,
+        policy_id: checked.policy_id,
+        command: checked.context.command,
+        evidence: checked.evidence
+      });
+    }
+    return checked;
+  }
+
+  authorizeCommand({ actuatorId, action, reason, effectiveMode, source }) {
+    return this.recordPolicyDecision(this.policyEngine.evaluate(this.policyContext({
+      actuatorId,
+      action,
+      reason,
+      effectiveMode,
+      source
+    })));
+  }
+
   evaluate() {
     this.expireCommands();
     this.expireManualRequests();
@@ -155,10 +264,16 @@ export class GreenCoreEngine {
 
     if (this.pumpRuntimeExceeded()) {
       this.raiseAlert('PUMP_RUNTIME_LIMIT_EXCEEDED', {});
-      return [this.issue('pump_01', 'OFF', 'pump continuous runtime safety limit reached', effectiveMode)].filter(Boolean);
+      return [this.issue(
+        'pump_01',
+        'OFF',
+        'pump continuous runtime safety limit reached',
+        effectiveMode,
+        'SAFETY'
+      )].filter(Boolean);
     }
 
-    if (effectiveMode === 'MANUAL') return this.applyManualRequests(required, effectiveMode);
+    if (effectiveMode === 'MANUAL') return this.applyManualRequests(effectiveMode);
     return this.applyAutomaticRules(required, effectiveMode);
   }
 
@@ -171,19 +286,40 @@ export class GreenCoreEngine {
     }
   }
 
-  applyManualRequests(required, effectiveMode) {
+  applyManualRequests(effectiveMode) {
     const commands = [];
     for (const [actuatorId, request] of this.manualRequests) {
-      if (
-        actuatorId === 'pump_01' &&
-        request.action === 'ON' &&
-        required.water_level.sample.value < this.rules.water_level.minimum_for_pump_percent
-      ) {
-        this.raiseAlert('MANUAL_COMMAND_REJECTED_LOW_WATER', { actuatorId });
-        commands.push(this.issue('pump_01', 'OFF', 'manual pump request rejected: water level too low', effectiveMode));
-      } else {
-        commands.push(this.issue(actuatorId, request.action, request.reason, effectiveMode));
+      const decision = this.authorizeCommand({
+        actuatorId,
+        action: request.action,
+        reason: request.reason,
+        effectiveMode,
+        source: 'MANUAL'
+      });
+      if (decision.effect === 'DENY') {
+        if (decision.policy_id === 'deny-pump-on-low-water') {
+          this.raiseAlert('MANUAL_COMMAND_REJECTED_LOW_WATER', { actuatorId });
+        }
+        const actuator = this.actuators.get(actuatorId);
+        if (actuatorId === 'pump_01' && request.action === 'ON' && actuator.state !== 'OFF') {
+          commands.push(this.issue(
+            'pump_01',
+            'OFF',
+            `policy fallback after denied manual request: ${decision.summary}`,
+            effectiveMode,
+            'SAFETY'
+          ));
+        }
+        continue;
       }
+      commands.push(this.issue(
+        actuatorId,
+        request.action,
+        request.reason,
+        effectiveMode,
+        'MANUAL',
+        decision
+      ));
     }
     this.manualRequests.clear();
     return commands.filter(Boolean);
@@ -191,6 +327,7 @@ export class GreenCoreEngine {
 
   applyAutomaticRules(required, effectiveMode) {
     const commands = [];
+    const source = effectiveMode === 'OFFLINE' ? 'OFFLINE' : 'AUTO';
     const soil = required.soil_moisture.sample.value;
     const water = required.water_level.sample.value;
     const air = required.air_temperature.sample.value;
@@ -199,17 +336,47 @@ export class GreenCoreEngine {
 
     if (water < this.rules.water_level.minimum_for_pump_percent) {
       this.raiseAlert('LOW_WATER_LEVEL', { value: water });
-      if (pump.state !== 'OFF') commands.push(this.issue('pump_01', 'OFF', 'water level below pump safety minimum', effectiveMode));
+      if (pump.state !== 'OFF') commands.push(this.issue(
+        'pump_01',
+        'OFF',
+        'water level below pump safety minimum',
+        effectiveMode,
+        'SAFETY'
+      ));
     } else if (soil < this.rules.soil_moisture.pump_on_below_percent && pump.state !== 'ON') {
-      commands.push(this.issue('pump_01', 'ON', 'soil moisture below configured minimum', effectiveMode));
+      commands.push(this.issue(
+        'pump_01',
+        'ON',
+        'soil moisture below configured minimum',
+        effectiveMode,
+        source
+      ));
     } else if (soil > this.rules.soil_moisture.pump_off_above_percent && pump.state !== 'OFF') {
-      commands.push(this.issue('pump_01', 'OFF', 'soil moisture reached configured upper threshold', effectiveMode));
+      commands.push(this.issue(
+        'pump_01',
+        'OFF',
+        'soil moisture reached configured upper threshold',
+        effectiveMode,
+        source
+      ));
     }
 
     if (air > this.rules.air_temperature.fan_on_above_c && fan.state !== 'ON') {
-      commands.push(this.issue('fan_01', 'ON', 'air temperature above configured maximum', effectiveMode));
+      commands.push(this.issue(
+        'fan_01',
+        'ON',
+        'air temperature above configured maximum',
+        effectiveMode,
+        source
+      ));
     } else if (air < this.rules.air_temperature.fan_off_below_c && fan.state !== 'OFF') {
-      commands.push(this.issue('fan_01', 'OFF', 'air temperature returned below hysteresis threshold', effectiveMode));
+      commands.push(this.issue(
+        'fan_01',
+        'OFF',
+        'air temperature returned below hysteresis threshold',
+        effectiveMode,
+        source
+      ));
     }
     return commands.filter(Boolean);
   }
@@ -219,7 +386,13 @@ export class GreenCoreEngine {
     for (const [id, actuator] of this.actuators) {
       const safeAction = actuator.type === 'vent' ? 'OPEN' : 'OFF';
       const expectedState = actuator.type === 'vent' ? 'OPEN' : 'OFF';
-      if (actuator.state !== expectedState) commands.push(this.issue(id, safeAction, reason, effectiveMode));
+      if (actuator.state !== expectedState) commands.push(this.issue(
+        id,
+        safeAction,
+        reason,
+        effectiveMode,
+        'SAFE'
+      ));
     }
     return commands.filter(Boolean);
   }
@@ -230,10 +403,19 @@ export class GreenCoreEngine {
     }
   }
 
-  issue(actuatorId, action, reason, effectiveMode) {
+  issue(actuatorId, action, reason, effectiveMode, source = effectiveMode, authorizedDecision = null) {
     const actuator = this.actuators.get(actuatorId);
     if (!actuator) throw new Error(`Unknown actuator: ${actuatorId}`);
     this.validateAction(actuator.type, action);
+    const decision = authorizedDecision ?? this.authorizeCommand({
+      actuatorId,
+      action,
+      reason,
+      effectiveMode,
+      source
+    });
+    if (decision.effect === 'DENY') return null;
+
     const issuedAt = this.now();
     const bucket = issuedAt.toISOString().slice(0, 16);
     const idempotencyKey = `${actuatorId}:${action}:${bucket}`;
@@ -249,7 +431,15 @@ export class GreenCoreEngine {
       expires_at: new Date(issuedAt.getTime() + this.rules.commands.ttl_seconds * 1000).toISOString(),
       reason,
       mode: effectiveMode,
-      idempotency_key: idempotencyKey
+      source,
+      idempotency_key: idempotencyKey,
+      policy_decision: {
+        decision_id: decision.decision_id,
+        effect: decision.effect,
+        policy_id: decision.policy_id,
+        policy_version: decision.policy_version,
+        summary: decision.summary
+      }
     };
     this.pendingCommands.set(command.command_id, command);
     this.log('COMMAND_ISSUED', command);
@@ -391,6 +581,7 @@ export class GreenCoreEngine {
 
     const events = (snapshot.events ?? []).map(entry => this.validatePersistentEvent(entry, 'event'));
     const alerts = (snapshot.alerts ?? []).map(entry => this.validatePersistentEvent(entry, 'alert'));
+    const policyDecisions = (snapshot.policy_decisions ?? []).map(entry => this.policyEngine.validateDecision(entry));
     const keys = snapshot.seen_idempotency_keys ?? [];
     if (!Array.isArray(keys) || keys.some(key => typeof key !== 'string')) {
       throw new Error('Invalid persisted idempotency keys');
@@ -404,6 +595,7 @@ export class GreenCoreEngine {
     this.manualRequests = manualRequests;
     this.events = events.slice(-this.limits.events);
     this.alerts = alerts.slice(-this.limits.alerts);
+    this.policyDecisions = policyDecisions.slice(-this.limits.policyDecisions);
     this.seenIdempotencyKeys = new Set(keys.slice(-this.limits.idempotencyKeys));
 
     for (const commandId of expiredCommands) {
@@ -416,7 +608,8 @@ export class GreenCoreEngine {
       this.log('STATE_RESTORED', {
         telemetry_count: telemetry.size,
         pending_command_count: pendingCommands.size,
-        manual_request_count: manualRequests.size
+        manual_request_count: manualRequests.size,
+        policy_decision_count: policyDecisions.length
       });
     }
     return this.snapshot();
@@ -424,7 +617,7 @@ export class GreenCoreEngine {
 
   snapshot() {
     return {
-      state_version: 1,
+      state_version: 2,
       configured_mode: this.mode,
       effective_mode: !this.connected && this.mode !== 'SAFE' ? 'OFFLINE' : this.mode,
       connected: this.connected,
@@ -433,6 +626,11 @@ export class GreenCoreEngine {
       pending_commands: [...this.pendingCommands.values()],
       manual_requests: Object.fromEntries(this.manualRequests),
       seen_idempotency_keys: [...this.seenIdempotencyKeys],
+      policy_contract: {
+        version: this.policyEngine.catalog().version,
+        status: this.policyEngine.catalog().status
+      },
+      policy_decisions: this.policyDecisionHistory(this.limits.policyDecisions),
       alerts: [...this.alerts],
       events: [...this.events]
     };
