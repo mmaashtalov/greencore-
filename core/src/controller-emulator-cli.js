@@ -7,6 +7,7 @@ const emulator = new DigitalTwinControllerEmulator({
   baseUrl: process.env.GREENCORE_URL ?? 'http://127.0.0.1:3000',
   controllerId: process.env.CONTROLLER_ID ?? 'controller_primary',
   firmware: process.env.CONTROLLER_FIRMWARE ?? 'emulator-2.0.0',
+  apiKey: process.env.CONTROLLER_API_KEY ?? null,
   simulationSpeed,
   scenarioPreset
 });
