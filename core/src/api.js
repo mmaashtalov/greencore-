@@ -137,7 +137,9 @@ function compactState(engine) {
     actuators: state.actuators,
     controllers: state.controllers,
     pending_commands: state.pending_commands,
-    alerts: (state.alerts ?? []).slice(-20)
+    alerts: (state.alerts ?? []).slice(-20),
+    policy_contract: state.policy_contract,
+    policy_decisions: (state.policy_decisions ?? []).slice(-20)
   };
 }
 
@@ -237,6 +239,19 @@ export function createApiServer({
         return send(200, engine.snapshot());
       }
 
+      if (method === 'GET' && path === '/policy/catalog') {
+        guard('read', 'read');
+        requireCapability(engine, 'policyCatalog', 'Policy engine is not enabled');
+        return send(200, engine.policyCatalog());
+      }
+
+      if (method === 'GET' && path === '/policy/decisions') {
+        guard('operator', 'operator');
+        requireCapability(engine, 'policyDecisionHistory', 'Policy decision journal is not enabled');
+        const requestedLimit = boundedLimit(requestUrl, { defaultValue: 100, maximum: 1000 });
+        return send(200, { decisions: engine.policyDecisionHistory(requestedLimit) });
+      }
+
       if (method === 'GET' && path === '/alerts') {
         guard('operator', 'operator');
         return send(200, { alerts: [...engine.alerts] });
@@ -273,6 +288,13 @@ export function createApiServer({
         requireCapability(history, 'alerts', 'History database is not enabled');
         const filters = queryFilters(requestUrl, ['type', 'from', 'to']);
         return send(200, { alerts: history.alerts(filters) });
+      }
+
+      if (method === 'GET' && path === '/history/policy-decisions') {
+        guard('operator', 'operator');
+        requireCapability(history, 'policyDecisions', 'Policy decision history is not enabled');
+        const filters = queryFilters(requestUrl, ['effect', 'policy_id', 'actuator_id', 'action', 'from', 'to']);
+        return send(200, { decisions: history.policyDecisions(filters) });
       }
 
       if (method === 'GET' && path === '/history/commands') {

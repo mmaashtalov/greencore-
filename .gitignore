@@ -1,0 +1,20 @@
+# Dependency and build output
+node_modules/
+dist/
+*.tsbuildinfo
+apps/demo/src/*.js
+apps/demo/src/*.js.map
+apps/demo/*.js
+apps/demo/*.js.map
+
+# Runtime data created by local or container launches
+core/data/
+*.sqlite
+*.sqlite-shm
+*.sqlite-wal
+
+# Local environment and temporary files
+.env
+.env.*
+!.env.example
+*.log

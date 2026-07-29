@@ -20,6 +20,7 @@ import {
   type CoreMetrics,
   type LiveConnectionStatus,
   type LiveEventRecord,
+  type LivePolicyDecision,
   type LiveSnapshot,
   type LiveTelemetrySample,
 } from './core-api';
@@ -160,6 +161,11 @@ function telemetryValue(sample?: LiveTelemetrySample) {
   return `${sample.value.toFixed(1)} ${sample.unit}`;
 }
 
+function policyCommand(decision: LivePolicyDecision) {
+  const command = decision.context.command;
+  return `${command.actuator_id ?? 'устройство'} → ${command.action ?? 'действие'} · ${command.source ?? 'источник не указан'}`;
+}
+
 function eventSummary(record: LiveEventRecord) {
   const payload = record.data && typeof record.data === 'object' ? record.data as Record<string, unknown> : {};
   if (record.event === 'telemetry') return `Принято измерений: ${String(payload.accepted_count ?? '—')}`;
@@ -197,6 +203,7 @@ function LiveOperationsPanel({
   const controllers = state?.controllers ?? [];
   const actuators = state?.actuators ?? {};
   const pendingCommands = state?.pending_commands ?? [];
+  const policyDecisions = state?.policy_decisions ?? [];
   const queue = snapshot?.simulation_queue ?? health?.simulation_queue;
 
   return (
@@ -285,6 +292,24 @@ function LiveOperationsPanel({
                     <strong>{command.actuator_id} · {command.action}</strong>
                     <span>{command.delivery_status ?? 'QUEUED'}</span>
                     <small>{command.reason ?? command.command_id}</small>
+                  </div>
+                ))}
+              </div>
+            </article>
+
+            <article className="live-card">
+              <div className="live-card-heading"><span>Policy Journal</span><b>{policyDecisions.length}</b></div>
+              <div className="policy-list">
+                {policyDecisions.length === 0 && <p className="muted">Ожидание первого решения.</p>}
+                {[...policyDecisions].slice(-6).reverse().map(decision => (
+                  <div key={decision.decision_id} className="policy-item">
+                    <div>
+                      <strong className={decision.effect === 'DENY' ? 'deny' : 'allow'}>{decision.effect}</strong>
+                      <small>{localDate(decision.evaluated_at)}</small>
+                    </div>
+                    <span>{policyCommand(decision)}</span>
+                    <p>{decision.summary}</p>
+                    <small>Правило: {decision.policy_id ?? 'default'} · {decision.decision_id}</small>
                   </div>
                 ))}
               </div>

@@ -196,6 +196,9 @@ export class PolicyEngine {
 
     const selected = matches[0] ?? null;
     const effect = selected?.effect ?? this.config.default_effect;
+    const summary = selected?.description ?? (effect === 'ALLOW'
+      ? 'Команда разрешена: запрещающее правило не сработало'
+      : 'Команда запрещена: действует политика по умолчанию');
     return {
       decision_id: `pdec_${this.idFactory()}`,
       evaluated_at: this.now().toISOString(),
@@ -204,7 +207,7 @@ export class PolicyEngine {
       effect,
       policy_id: selected?.policy_id ?? null,
       priority: selected?.priority ?? null,
-      summary: selected?.description ?? `Default policy effect: ${effect}`,
+      summary,
       alert_type: selected?.alert_type ?? null,
       evidence: selected?.evidence ?? [],
       matched_policy_ids: matches.map(item => item.policy_id),

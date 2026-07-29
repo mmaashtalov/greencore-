@@ -115,6 +115,14 @@ p { margin: 0; }
 .command-list > div { display: grid; grid-template-columns: 1fr auto; gap: 4px 8px; padding: 10px; border-radius: 10px; border: 1px solid #193226; background: #08130e; }
 .command-list > div > span { color: #6eeaab; font-size: 11px; font-weight: 800; }
 .command-list > div > small { grid-column: 1 / -1; overflow-wrap: anywhere; }
+.policy-list { display: grid; gap: 8px; }
+.policy-item { padding: 10px; border: 1px solid #193226; border-radius: 10px; background: #08130e; }
+.policy-item > div { display: flex; align-items: center; justify-content: space-between; gap: 8px; }
+.policy-item strong { font-size: 11px; letter-spacing: .08em; }
+.policy-item strong.allow { color: #6eeaab; }
+.policy-item strong.deny { color: #ffad92; }
+.policy-item span, .policy-item small { display: block; color: #7f9689; font-size: 11px; overflow-wrap: anywhere; }
+.policy-item p { margin: 6px 0; color: #c9ddd0; font-size: 12px; line-height: 1.4; }
 .event-stream-card { margin-top: 12px; }
 .event-list { grid-template-columns: repeat(2, minmax(0, 1fr)); }
 .event-list > div { padding: 10px; border-radius: 10px; border: 1px solid #173024; background: #07120d; min-width: 0; }

@@ -13,6 +13,7 @@ import {
   type ActuatorId,
   type OperatorMode,
   type OperatorRuntimeState,
+  type PolicyDecision,
 } from './operator-api';
 import './owner-console.css';
 
@@ -40,6 +41,24 @@ function telemetryValue(state: OperatorRuntimeState | null, metric: string) {
 
 function errorText(error: unknown) {
   return error instanceof Error ? error.message : 'Неизвестная ошибка';
+}
+
+function displayValue(value: unknown) {
+  if (value === null || value === undefined) return 'нет данных';
+  if (typeof value === 'boolean') return value ? 'да' : 'нет';
+  if (typeof value === 'number') return Number.isInteger(value) ? String(value) : value.toFixed(2);
+  if (typeof value === 'string') return value;
+  try {
+    return JSON.stringify(value);
+  } catch {
+    return String(value);
+  }
+}
+
+function decisionCommand(decision: PolicyDecision) {
+  const command = decision.context?.command;
+  if (!command) return 'команда не указана';
+  return `${command.actuator_id ?? 'устройство'} → ${command.action ?? 'действие'} · ${command.source ?? 'источник не указан'}`;
 }
 
 export function OwnerConsole() {
@@ -145,6 +164,9 @@ export function OwnerConsole() {
     void execute(`Команда поставлена в очередь: ${actuatorId} → ${action}`, () => issueOperatorCommand(apiUrl, token, actuatorId, action, reason));
   };
 
+  const policyDecisions = runtime?.policy_decisions ?? [];
+  const deniedPolicyDecisions = policyDecisions.filter(decision => decision.effect === 'DENY').length;
+
   return (
     <section className="owner-console" aria-label="Панель владельца GreenCore">
       <div className="owner-console__heading">
@@ -232,6 +254,52 @@ export function OwnerConsole() {
               <p className="owner-console__hint">Команда сначала попадает в очередь. Серверные и локальные safety-проверки могут её отклонить.</p>
             </article>
           </div>
+
+          <article className="owner-console__card owner-console__journal">
+            <div className="owner-console__card-heading">
+              <div>
+                <h3>Журнал решений</h3>
+                <p className="owner-console__hint">Каждая команда проходит policy-проверку. Здесь видно, что система разрешила или запретила и на каких показателях.</p>
+              </div>
+              <span className="owner-console__journal-count">{policyDecisions.length} решений · {deniedPolicyDecisions} DENY</span>
+            </div>
+            {policyDecisions.length === 0 && <p className="owner-console__muted">Решений пока нет. Нажмите «Оценить сейчас» или дождитесь автоматического цикла.</p>}
+            {[...policyDecisions].slice(-12).reverse().map(decision => (
+              <div className="owner-console__decision" key={decision.decision_id}>
+                <div className="owner-console__decision-heading">
+                  <strong className={`owner-console__decision-effect ${decision.effect === 'DENY' ? 'deny' : 'allow'}`}>
+                    {decision.effect === 'DENY' ? 'ЗАПРЕЩЕНО' : 'РАЗРЕШЕНО'}
+                  </strong>
+                  <span>{localDate(decision.evaluated_at)}</span>
+                </div>
+                <p>{decision.summary}</p>
+                <small>
+                  {decisionCommand(decision)} · правило: {decision.policy_id ?? 'default'} · {decision.decision_id}
+                </small>
+                {decision.evidence.length > 0 && (
+                  <div className="owner-console__evidence">
+                    {decision.evidence.slice(0, 6).map((evidence, index) => (
+                      <span key={`${decision.decision_id}-${evidence.fact}-${index}`} className={evidence.matched ? 'matched' : 'not-matched'}>
+                        {evidence.fact}: {displayValue(evidence.observed)} {evidence.operator} {displayValue(evidence.expected)}
+                      </span>
+                    ))}
+                  </div>
+                )}
+                {decision.evidence.length === 0 && decision.context.telemetry && (
+                  <div className="owner-console__evidence">
+                    {Object.entries(decision.context.telemetry)
+                      .filter(([, telemetry]) => telemetry.value !== null && telemetry.value !== undefined)
+                      .slice(0, 6)
+                      .map(([metric, telemetry]) => (
+                        <span key={`${decision.decision_id}-${metric}`} className={telemetry.usable === false ? 'not-matched' : 'matched'}>
+                          {metric}: {displayValue(telemetry.value)} · {telemetry.quality ?? 'качество неизвестно'} · {telemetry.state ?? 'состояние неизвестно'}
+                        </span>
+                      ))}
+                  </div>
+                )}
+              </div>
+            ))}
+          </article>
 
           <article className="owner-console__card owner-console__alerts">
             <div className="owner-console__card-heading"><h3>Последние тревоги</h3><button onClick={() => void refresh()} disabled={busy}>Обновить</button></div>

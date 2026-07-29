@@ -2,6 +2,8 @@
 
 GreenCore — аппаратно-независимая платформа управления умной теплицей с цифровым двойником, эмулятором контроллера, защищённым API и воспроизводимыми испытаниями.
 
+Правила работы с канонической базой, граница legacy, обязательная проверка Git и критерии фактической валидации зафиксированы в [AGENTS.md](AGENTS.md).
+
 ## Публичная демонстрация
 
 Dashboard: https://mmaashtalov.github.io/greencore-/
@@ -67,12 +69,14 @@ Workflow `GreenCore Public API Smoke` ежедневно проверяет:
 - Scenario Runner и Fault Campaign Runner;
 - TTL, повторная доставка и идемпотентные ACK;
 - SQLite history и серверная аналитика;
+- Policy Engine v1 и Decision Journal с объяснением `ALLOW/DENY`;
 - Bearer/API-key авторизация и роли;
 - rate limiting и ограниченная очередь симуляций;
 - SSE live stream с replay и heartbeat;
 - production Docker image и persistent volume;
 - GitHub Pages dashboard;
-- CI на Node.js 22/24 и container smoke-tests.
+- CI на Node.js 22/24 и container smoke-tests;
+- воспроизводимая frontend-установка через pinned dependencies и `pnpm-lock.yaml`.
 
 ## Честные ограничения
 
@@ -80,6 +84,8 @@ Workflow `GreenCore Public API Smoke` ежедневно проверяет:
 - Пороговые значения и модель роста тестовые, а не агрономически подтверждённые.
 - Показатели урожайности и прибыли в демонстрации являются модельными.
 - Встроенный demo-controller предназначен для публичной демонстрации, а не для управления физическим оборудованием.
+
+Публикация внешних Pages/Render URL считается готовой только после отдельной проверки фактического URL и загруженного asset; локальная сборка сама по себе это не подтверждает.
 
 ## Структура
 
@@ -91,6 +97,8 @@ packages/simulation-core/  # автономная браузерная моде�
 render.yaml                # one-click публичный backend
 .github/workflows/         # CI, Pages, container и external smoke
 ```
+
+Контракт будущего подключения физических устройств: [docs/integration/hardware-handoff.md](docs/integration/hardware-handoff.md).
 
 ## Локальный запуск
 
