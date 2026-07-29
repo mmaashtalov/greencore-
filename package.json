@@ -4,6 +4,7 @@
   "version": "0.1.0",
   "packageManager": "pnpm@9.15.0",
   "scripts": {
+    "acceptance": "node scripts/acceptance.mjs",
     "dev": "pnpm --filter @greencore/demo dev",
     "build": "pnpm -r build",
     "typecheck": "pnpm -r typecheck",

@@ -4,6 +4,8 @@ GreenCore — аппаратно-независимая платформа уп�
 
 Правила работы с канонической базой, граница legacy, обязательная проверка Git и критерии фактической валидации зафиксированы в [AGENTS.md](AGENTS.md).
 
+Внешнему разработчику передавать проект по [пакету передачи](docs/handoff/README.md): он фиксирует исходную ветку, воспроизводимый приёмочный прогон, внешние зависимости и границу между эмуляцией и полевым объектом.
+
 ## Публичная демонстрация
 
 Dashboard: https://mmaashtalov.github.io/greencore-/
@@ -129,3 +131,13 @@ docker compose up --build
 - каталог симуляций: `http://localhost:3000/simulations/catalog`
 
 Подробная документация ядра: [core/README.md](core/README.md)
+
+## Единая приёмочная проверка
+
+После установки зависимостей внешнему разработчику достаточно выполнить:
+
+```bash
+corepack pnpm acceptance
+```
+
+Команда последовательно запускает monorepo typecheck/build и полный Core-набор: unit-тесты, сценарии и fault campaigns. Подробные критерии — в [acceptance checklist](docs/handoff/acceptance-checklist.md).
