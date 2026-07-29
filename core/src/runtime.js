@@ -39,6 +39,9 @@ export class GreenCoreRuntime {
   get telemetry() { return this.engine.telemetry; }
   get pendingCommands() { return this.engine.pendingCommands; }
 
+  policyCatalog() { return this.engine.policyCatalog(); }
+  policyDecisionHistory(limit = 100) { return this.engine.policyDecisionHistory(limit); }
+
   setMode(mode) { return this.engine.setMode(mode); }
   setConnectivity(connected) { return this.engine.setConnectivity(connected); }
   requestManual(...args) { return this.engine.requestManual(...args); }

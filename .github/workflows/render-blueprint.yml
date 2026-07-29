@@ -1,0 +1,46 @@
+name: Validate Render Blueprint
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: greencore-render-blueprint-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  validate:
+    name: Validate render.yaml
+    runs-on: ubuntu-latest
+    env:
+      RENDER_API_KEY: ${{ secrets.RENDER_API_KEY }}
+      RENDER_WORKSPACE_ID: ${{ vars.RENDER_WORKSPACE_ID }}
+
+    steps:
+      - name: Verify Render configuration
+        shell: bash
+        run: |
+          set -euo pipefail
+          if [ -z "${RENDER_API_KEY:-}" ]; then
+            echo "::error title=Missing Render API key::Set repository secret RENDER_API_KEY before running this workflow." >&2
+            exit 1
+          fi
+          if [ -z "${RENDER_WORKSPACE_ID:-}" ]; then
+            echo "::error title=Missing Render workspace::Set repository variable RENDER_WORKSPACE_ID before running this workflow." >&2
+            exit 1
+          fi
+
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Install Render CLI
+        run: curl -fsSL https://raw.githubusercontent.com/render-oss/cli/main/bin/install.sh | sh
+
+      - name: Validate Render Blueprint
+        shell: bash
+        run: |
+          set -euo pipefail
+          "$HOME/.local/bin/render" blueprints validate render.yaml \
+            --workspace "$RENDER_WORKSPACE_ID"

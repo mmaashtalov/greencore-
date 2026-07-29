@@ -106,6 +106,21 @@
 .owner-console__devices button { min-height: 36px; padding: 7px 10px; }
 .owner-console__hint { margin: 12px 0 0; color: #7e9487; font-size: 12px; line-height: 1.5; }
 
+.owner-console__journal { margin-top: 12px; }
+.owner-console__journal .owner-console__hint { max-width: 760px; margin: 6px 0 0; }
+.owner-console__journal-count { color: #9bcbb0; font-size: 12px; white-space: nowrap; }
+.owner-console__decision { margin-top: 12px; padding: 12px; border: 1px solid #193024; border-radius: 10px; background: #08130d; }
+.owner-console__decision-heading { display: flex; align-items: center; justify-content: space-between; gap: 10px; }
+.owner-console__decision-heading > span { color: #7f9588; font-size: 12px; }
+.owner-console__decision-effect { font-size: 12px; letter-spacing: .08em; }
+.owner-console__decision-effect.allow { color: #72efb0; }
+.owner-console__decision-effect.deny { color: #ffab91; }
+.owner-console__decision p { margin: 8px 0 5px; line-height: 1.45; }
+.owner-console__decision small { display: block; color: #82998b; overflow-wrap: anywhere; line-height: 1.45; }
+.owner-console__evidence { display: grid; gap: 5px; margin-top: 9px; }
+.owner-console__evidence span { padding: 6px 8px; border-radius: 7px; color: #b3c9ba; background: rgba(28, 66, 45, .45); font-size: 12px; overflow-wrap: anywhere; }
+.owner-console__evidence span.not-matched { color: #d8c59b; background: rgba(75, 59, 25, .35); }
+
 .owner-console__alerts { margin-top: 12px; }
 .owner-console__alerts > div:not(.owner-console__card-heading) { display: flex; align-items: center; justify-content: space-between; gap: 14px; padding: 10px 0; border-bottom: 1px solid #172b20; }
 .owner-console__alerts > div:last-child { border-bottom: 0; }
@@ -127,4 +142,5 @@
   .owner-console__devices > div { align-items: stretch; flex-direction: column; }
   .owner-console__devices > div > div:last-child { justify-content: stretch; }
   .owner-console__devices button { flex: 1; }
+  .owner-console__journal-count { white-space: normal; text-align: right; }
 }

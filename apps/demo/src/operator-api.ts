@@ -4,6 +4,41 @@ export type OperatorMode = 'AUTO' | 'MANUAL' | 'SAFE';
 export type ActuatorId = 'pump_01' | 'fan_01' | 'vent_01';
 export type ActuatorAction = 'ON' | 'OFF' | 'OPEN' | 'CLOSE';
 
+export type PolicyEvidence = {
+  fact: string;
+  operator: string;
+  observed?: unknown;
+  expected?: unknown;
+  matched: boolean;
+};
+
+export type PolicyDecision = {
+  decision_id: string;
+  evaluated_at: string;
+  policy_version: string;
+  effect: 'ALLOW' | 'DENY';
+  policy_id?: string | null;
+  summary: string;
+  alert_type?: string | null;
+  matched_policy_ids: string[];
+  evidence: PolicyEvidence[];
+  context: {
+    command?: {
+      actuator_id?: string;
+      action?: string;
+      source?: string;
+      reason?: string;
+    };
+    telemetry?: Record<string, {
+      state?: string;
+      usable?: boolean;
+      value?: number | null;
+      quality?: string | null;
+      age_seconds?: number | null;
+    }>;
+  };
+};
+
 export type OperatorRuntimeState = {
   configured_mode: string;
   effective_mode: string;
@@ -34,6 +69,11 @@ export type OperatorRuntimeState = {
     timestamp?: string;
     details?: Record<string, unknown>;
   }>;
+  policy_contract?: {
+    version: string;
+    status: string;
+  };
+  policy_decisions?: PolicyDecision[];
 };
 
 const TOKEN_KEY = 'greencore-operator-token';

@@ -73,6 +73,7 @@ export class SqliteHistoryStore {
       events: positiveInteger(limits.events ?? 100000, 'events limit'),
       alerts: positiveInteger(limits.alerts ?? 50000, 'alerts limit'),
       commands: positiveInteger(limits.commands ?? 100000, 'commands limit'),
+      policyDecisions: positiveInteger(limits.policyDecisions ?? 100000, 'policy decisions limit'),
       simulations: positiveInteger(limits.simulations ?? 1000, 'simulations limit')
     };
     this.lastError = null;
@@ -102,11 +103,10 @@ export class SqliteHistoryStore {
         applied_at TEXT NOT NULL
       );
     `);
-    const current = Number(this.database.prepare('SELECT COALESCE(MAX(version), 0) AS version FROM schema_migrations').get().version);
-    if (current >= 1) return;
-
-    this.transaction(() => {
-      this.database.exec(`
+    let current = Number(this.database.prepare('SELECT COALESCE(MAX(version), 0) AS version FROM schema_migrations').get().version);
+    if (current < 1) {
+      this.transaction(() => {
+        this.database.exec(`
         CREATE TABLE telemetry_history (
           id INTEGER PRIMARY KEY AUTOINCREMENT,
           timestamp TEXT NOT NULL,
@@ -172,10 +172,41 @@ export class SqliteHistoryStore {
         );
         CREATE INDEX simulation_created_idx ON simulation_reports(created_at DESC);
         CREATE INDEX simulation_name_created_idx ON simulation_reports(name, created_at DESC);
-      `);
-      this.database.prepare('INSERT INTO schema_migrations(version, applied_at) VALUES (?, ?)')
-        .run(1, this.now().toISOString());
-    });
+        `);
+        this.database.prepare('INSERT INTO schema_migrations(version, applied_at) VALUES (?, ?)')
+          .run(1, this.now().toISOString());
+      });
+      current = 1;
+    }
+
+    if (current < 2) {
+      this.transaction(() => {
+        this.database.exec(`
+          CREATE TABLE policy_decision_history (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            decision_id TEXT NOT NULL UNIQUE,
+            evaluated_at TEXT NOT NULL,
+            captured_at TEXT NOT NULL,
+            effect TEXT NOT NULL,
+            policy_id TEXT,
+            policy_version TEXT NOT NULL,
+            summary TEXT NOT NULL,
+            alert_type TEXT,
+            actuator_id TEXT,
+            action TEXT,
+            source TEXT,
+            command_json TEXT NOT NULL,
+            evidence_json TEXT NOT NULL,
+            decision_json TEXT NOT NULL
+          );
+          CREATE INDEX policy_decision_evaluated_idx ON policy_decision_history(evaluated_at DESC);
+          CREATE INDEX policy_decision_effect_idx ON policy_decision_history(effect, evaluated_at DESC);
+          CREATE INDEX policy_decision_policy_idx ON policy_decision_history(policy_id, evaluated_at DESC);
+        `);
+        this.database.prepare('INSERT INTO schema_migrations(version, applied_at) VALUES (?, ?)')
+          .run(2, this.now().toISOString());
+      });
+    }
   }
 
   prepareStatements() {
@@ -190,6 +221,26 @@ export class SqliteHistoryStore {
       `),
       insertAlert: this.database.prepare(`
         INSERT OR IGNORE INTO alert_history(timestamp, type, details_json) VALUES (?, ?, ?)
+      `),
+      upsertPolicyDecision: this.database.prepare(`
+        INSERT INTO policy_decision_history(
+          decision_id, evaluated_at, captured_at, effect, policy_id, policy_version,
+          summary, alert_type, actuator_id, action, source, command_json, evidence_json, decision_json
+        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+        ON CONFLICT(decision_id) DO UPDATE SET
+          evaluated_at = excluded.evaluated_at,
+          captured_at = excluded.captured_at,
+          effect = excluded.effect,
+          policy_id = excluded.policy_id,
+          policy_version = excluded.policy_version,
+          summary = excluded.summary,
+          alert_type = excluded.alert_type,
+          actuator_id = excluded.actuator_id,
+          action = excluded.action,
+          source = excluded.source,
+          command_json = excluded.command_json,
+          evidence_json = excluded.evidence_json,
+          decision_json = excluded.decision_json
       `),
       upsertCommand: this.database.prepare(`
         INSERT INTO command_history(
@@ -260,10 +311,35 @@ export class SqliteHistoryStore {
     );
   }
 
+  upsertPolicyDecision(decision) {
+    if (!decision?.decision_id || !decision?.evaluated_at || !decision?.effect || !decision?.policy_version || !decision?.summary) return;
+    const command = decision.context?.command ?? {};
+    this.statements.upsertPolicyDecision.run(
+      decision.decision_id,
+      decision.evaluated_at,
+      this.now().toISOString(),
+      decision.effect,
+      decision.policy_id ?? null,
+      decision.policy_version,
+      decision.summary,
+      decision.alert_type ?? null,
+      command.actuator_id ?? null,
+      command.action ?? null,
+      command.source ?? null,
+      json(command),
+      json(decision.evidence ?? []),
+      json(decision)
+    );
+  }
+
   captureRuntimeSnapshot(snapshot) {
     try {
       const capturedAt = this.now().toISOString();
       this.transaction(() => {
+        for (const decision of snapshot?.policy_decisions ?? []) {
+          this.upsertPolicyDecision(decision);
+        }
+
         for (const sample of Object.values(snapshot?.telemetry ?? {})) {
           this.statements.insertTelemetry.run(
             sample.timestamp,
@@ -325,6 +401,7 @@ export class SqliteHistoryStore {
     this.pruneById('telemetry_history', this.limits.telemetry);
     this.pruneById('event_history', this.limits.events);
     this.pruneById('alert_history', this.limits.alerts);
+    this.pruneById('policy_decision_history', this.limits.policyDecisions);
     this.database.prepare(`
       DELETE FROM command_history
       WHERE command_id NOT IN (
@@ -454,7 +531,7 @@ export class SqliteHistoryStore {
 
   stats() {
     const counts = {};
-    for (const table of ['telemetry_history', 'event_history', 'alert_history', 'command_history', 'simulation_reports']) {
+    for (const table of ['telemetry_history', 'event_history', 'alert_history', 'policy_decision_history', 'command_history', 'simulation_reports']) {
       counts[table] = Number(this.database.prepare(`SELECT COUNT(*) AS count FROM ${table}`).get().count);
     }
     const telemetryRange = this.database.prepare(`
@@ -467,11 +544,45 @@ export class SqliteHistoryStore {
       last_error: this.lastError,
       last_capture_at: this.lastCaptureAt,
       database_path: this.filePath,
-      schema_version: 1,
+      schema_version: 2,
       counts,
       telemetry_range: telemetryRange,
       approximate_bytes: Number(page.page_count) * Number(pageSize.page_size)
     };
+  }
+
+  policyDecisions(filters = {}) {
+    const limit = normalizeLimit(filters.limit, { defaultValue: 100, maximum: 5000 });
+    const clauses = [];
+    const parameters = [];
+    for (const [filter, column] of Object.entries({
+      effect: 'effect',
+      policy_id: 'policy_id',
+      actuator_id: 'actuator_id',
+      action: 'action'
+    })) {
+      const value = filters[filter];
+      if (value === undefined || value === null || value === '') continue;
+      clauses.push(`${column} = ?`);
+      parameters.push(value);
+    }
+    if (filters.from) {
+      clauses.push('evaluated_at >= ?');
+      parameters.push(validDate(filters.from, 'from'));
+    }
+    if (filters.to) {
+      clauses.push('evaluated_at <= ?');
+      parameters.push(validDate(filters.to, 'to'));
+    }
+    const where = clauses.length > 0 ? ` WHERE ${clauses.join(' AND ')}` : '';
+    return this.database.prepare(`
+      SELECT decision_json, captured_at
+      FROM policy_decision_history${where}
+      ORDER BY evaluated_at DESC, id DESC LIMIT ?
+    `).all(...parameters, limit).map(row => ({
+      ...parseJson(row.decision_json),
+      captured_at: row.captured_at
+    }));
   }
 
   close() {
