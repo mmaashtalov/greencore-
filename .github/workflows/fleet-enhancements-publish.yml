@@ -1,0 +1,95 @@
+name: Publish Fleet Enhancements
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - 'apps/demo/public/fleet-mvp/fleet-patch.*'
+      - 'apps/demo/public/fleet-mvp/waybills-list-patch.*'
+      - 'apps/demo/public/fleet-mvp/statement-print-patch.*'
+      - '.github/workflows/fleet-enhancements-publish.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+concurrency:
+  group: fleet-enhancements-publish
+  cancel-in-progress: true
+
+jobs:
+  validate-and-publish:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout source
+        uses: actions/checkout@v4
+        with:
+          path: source
+
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+
+      - name: Validate enhancement JavaScript
+        shell: bash
+        run: |
+          set -euo pipefail
+          cd source/apps/demo/public/fleet-mvp
+          node --check fleet-patch.js
+          node --check waybills-list-patch.js
+          node --check statement-print-patch.js
+          test -s fleet-patch.css
+          test -s waybills-list-patch.css
+          test -s statement-print-patch.css
+
+      - name: Checkout public branch
+        uses: actions/checkout@v4
+        with:
+          ref: gh-pages
+          path: public
+
+      - name: Activate enhancement modules
+        shell: bash
+        run: |
+          set -euo pipefail
+          python - <<'PY'
+          from pathlib import Path
+          p = Path('public/fleet-mvp/index.html')
+          html = p.read_text(encoding='utf-8')
+          css = [
+              '<link rel="stylesheet" href="./fleet-patch.css?v=20260815-1" />',
+              '<link rel="stylesheet" href="./waybills-list-patch.css?v=20260815-1" />',
+          ]
+          js = [
+              '<script type="module" src="./fleet-patch.js?v=20260815-1"></script>',
+              '<script type="module" src="./waybills-list-patch.js?v=20260815-1"></script>',
+              '<script type="module" src="./statement-print-patch.js?v=20260815-1"></script>',
+          ]
+          for tag in css:
+              if tag not in html:
+                  html = html.replace('</head>', f'  {tag}\n</head>')
+          anchor = '<script type="module" src="./ux-bridge.js?v=20260815-1"></script>'
+          for tag in js:
+              if tag not in html:
+                  if anchor in html:
+                      html = html.replace(anchor, f'{tag}\n  {anchor}')
+                  else:
+                      html = html.replace('</body>', f'  {tag}\n</body>')
+          p.write_text(html, encoding='utf-8')
+          PY
+
+      - name: Commit public index
+        working-directory: public
+        shell: bash
+        run: |
+          set -euo pipefail
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          if git diff --quiet -- fleet-mvp/index.html; then
+            echo "Fleet enhancements already active"
+            exit 0
+          fi
+          git add fleet-mvp/index.html
+          git commit -m "feat(fleet-demo): activate fleet enhancements"
+          git push origin HEAD:gh-pages
