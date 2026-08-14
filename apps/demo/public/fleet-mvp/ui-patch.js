@@ -1,17 +1,34 @@
 const PATCH_CFG = {
   url: 'https://tikjmiyrhkcjrxjylmqb.supabase.co',
   key: 'sb_publishable_clr5P9USk7b63MajJmmr9A_Iz0wi_0F',
-  version: '2026.08.14-ui2'
+  version: '2026.08.14-ui3'
 };
 const PATCH_SESSION_KEY = 'fleet_mvp_session_v2';
 
 function patchSession() {
   try { return JSON.parse(localStorage.getItem(PATCH_SESSION_KEY) || 'null'); } catch { return null; }
 }
-async function patchRpc(name, params={}, retry=true) {
+function savePatchSession(session) {
+  if (session) localStorage.setItem(PATCH_SESSION_KEY, JSON.stringify(session));
+}
+async function refreshPatchSession() {
   const session = patchSession();
+  if (!session?.refresh_token) throw new Error('Сессия истекла. Войдите снова.');
+  const res = await fetch(`${PATCH_CFG.url}/auth/v1/token?grant_type=refresh_token`, {
+    method: 'POST',
+    headers: {apikey: PATCH_CFG.key, 'Content-Type':'application/json'},
+    body: JSON.stringify({refresh_token: session.refresh_token})
+  });
+  const data = await res.json().catch(() => ({}));
+  if (!res.ok || !data.access_token) throw new Error(data.message || data.msg || 'Сессия истекла. Войдите снова.');
+  data.obtained_at = Date.now();
+  savePatchSession(data);
+  return data;
+}
+async function patchRpc(name, params={}, retry=true) {
+  let session = patchSession();
   if (!session?.access_token) throw new Error('Нужно войти в систему.');
-  const res = await fetch(`${PATCH_CFG.url}/rest/v1/rpc/${encodeURIComponent(name)}`, {
+  let res = await fetch(`${PATCH_CFG.url}/rest/v1/rpc/${encodeURIComponent(name)}`, {
     method: 'POST',
     headers: {
       apikey: PATCH_CFG.key,
@@ -21,8 +38,16 @@ async function patchRpc(name, params={}, retry=true) {
     body: JSON.stringify(params)
   });
   if (res.status === 401 && retry) {
-    await new Promise(r => setTimeout(r, 250));
-    return patchRpc(name, params, false);
+    session = await refreshPatchSession();
+    res = await fetch(`${PATCH_CFG.url}/rest/v1/rpc/${encodeURIComponent(name)}`, {
+      method: 'POST',
+      headers: {
+        apikey: PATCH_CFG.key,
+        Authorization: `Bearer ${session.access_token}`,
+        'Content-Type': 'application/json'
+      },
+      body: JSON.stringify(params)
+    });
   }
   if (!res.ok) {
     const x = await res.json().catch(() => ({}));
@@ -116,9 +141,7 @@ async function hydrateIssueForm(form) {
     const issueData = await patchRpc('get_waybill_issue_form');
     fillEmployeeSelect(form.elements.senior_vehicle_employee_id, roleCandidates(issueData?.employees, 'senior'), 'Не указан');
     fillEmployeeSelect(form.elements.responsible_employee_id, roleCandidates(issueData?.employees, 'responsible'), 'Не указан');
-  } catch (_) {
-    // Ролевые списки — UX-улучшение; базовая форма остается работоспособной.
-  }
+  } catch (_) {}
 
   let seq = 0;
   async function refreshCompatibility() {
@@ -132,7 +155,7 @@ async function hydrateIssueForm(form) {
       driver.disabled = true;
       if (submit) submit.disabled = true;
       if (hint) hint.textContent = 'Выберите машину — система сама покажет подходящих водителей.';
-      return;
+      return null;
     }
 
     driver.disabled = true;
@@ -141,7 +164,7 @@ async function hydrateIssueForm(form) {
 
     try {
       const ctx = await patchRpc('get_waybill_issue_context_v2', {p_vehicle_id: vehicleId, p_trailer_id: trailerId});
-      if (token !== seq) return;
+      if (token !== seq) return null;
       const drivers = ctx?.drivers || [];
       driver.innerHTML = '<option value="">Выберите водителя</option>' + drivers.map(d =>
         `<option value="${d.id}">${[d.rank,d.label].filter(Boolean).join(' ')} · ${(d.categories || []).join(',')}</option>`
@@ -157,16 +180,18 @@ async function hydrateIssueForm(form) {
       if (hint) {
         hint.textContent = drivers.length
           ? `Старт: ${Math.round(Number(ctx?.defaults?.opening_odometer_km || 0)).toLocaleString('ru-RU')} км · ${Number(ctx?.defaults?.opening_fuel_l ?? 0).toLocaleString('ru-RU')} л${req.length ? ` · допуск ${[...new Set(req)].join(' + ')}` : ''}.`
-          : `Нет водителя с требуемым допуском${req.length ? ` (${[...new Set(req)].join(' + ')})` : ''}.`;
+          : `Нет свободного водителя с требуемым допуском${req.length ? ` (${[...new Set(req)].join(' + ')})` : ''}.`;
         hint.classList.toggle('compat-danger', drivers.length === 0);
       }
+      return ctx;
     } catch (e) {
-      if (token !== seq) return;
+      if (token !== seq) return null;
       driver.innerHTML = '<option value="">Не удалось проверить допуск</option>';
       driver.disabled = true;
       if (submit) submit.disabled = true;
       if (hint) hint.textContent = e.message || 'Не удалось проверить допуск.';
       patchToast(e.message || 'Не удалось проверить допуск.', 'error');
+      return null;
     }
   }
 
@@ -174,26 +199,36 @@ async function hydrateIssueForm(form) {
   trailer?.addEventListener('change', refreshCompatibility);
 
   form.addEventListener('submit', async e => {
+    if (form.dataset.compatValidated === '1') {
+      form.dataset.compatValidated = '';
+      return;
+    }
+
+    e.preventDefault();
+    e.stopPropagation();
+
     const vehicleId = vehicle.value;
     const driverId = driver.value;
     if (!vehicleId || !driverId) {
-      e.preventDefault();
-      e.stopPropagation();
       patchToast(!vehicleId ? 'Сначала выберите машину.' : 'Выберите подходящего водителя.', 'error');
       return;
     }
+
+    if (submit) submit.disabled = true;
     try {
       const ctx = await patchRpc('get_waybill_issue_context_v2', {p_vehicle_id: vehicleId, p_trailer_id: trailer?.value || null});
-      if (!(ctx?.drivers || []).some(d => d.id === driverId)) {
-        e.preventDefault();
-        e.stopPropagation();
-        patchToast('Этот водитель не подходит к выбранной машине и прицепу. Выбор обновлён.', 'error');
+      const valid = (ctx?.drivers || []).some(d => d.id === driverId);
+      if (!valid) {
+        patchToast('Водитель больше не доступен для этой машины. Список обновлён.', 'error');
         await refreshCompatibility();
+        return;
       }
+      form.dataset.compatValidated = '1';
+      form.requestSubmit();
     } catch (err) {
-      e.preventDefault();
-      e.stopPropagation();
       patchToast(err.message || 'Не удалось проверить допуск.', 'error');
+    } finally {
+      if (form.dataset.compatValidated !== '1' && submit) submit.disabled = false;
     }
   });
 
