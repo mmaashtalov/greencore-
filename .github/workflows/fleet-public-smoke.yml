@@ -1,0 +1,62 @@
+name: Fleet Public Smoke
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - 'apps/demo/public/fleet-mvp/**'
+      - '.github/workflows/fleet-public-smoke.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: fleet-public-smoke
+  cancel-in-progress: true
+
+jobs:
+  validate:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+
+      - name: Check JavaScript syntax
+        shell: bash
+        run: |
+          set -euo pipefail
+          cd apps/demo/public/fleet-mvp
+          for file in \
+            app.js \
+            ui-patch.js \
+            period-patch.js \
+            review-patch.js \
+            driver-correction-patch.js \
+            state-action-patch.js \
+            create-form-patch.js \
+            ux-bridge.js; do
+            test -s "$file"
+            node --check "$file"
+          done
+
+      - name: Verify index references exist
+        shell: bash
+        run: |
+          set -euo pipefail
+          cd apps/demo/public/fleet-mvp
+          python - <<'PY'
+          from pathlib import Path
+          import re
+          html = Path('index.html').read_text(encoding='utf-8')
+          refs = re.findall(r'(?:src|href)="\.\/([^"?]+)', html)
+          missing = [ref for ref in refs if not Path(ref).is_file()]
+          if missing:
+              raise SystemExit('Missing referenced files: ' + ', '.join(missing))
+          print('References OK:', ', '.join(refs))
+          PY
