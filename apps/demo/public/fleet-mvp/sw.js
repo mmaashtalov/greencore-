@@ -1,4 +1,4 @@
-const CACHE='fleet-mvp-shell-20260815-11';
+const CACHE='fleet-mvp-shell-20260815-12';
 const INDEX='./index.html';
 async function cacheUrl(cache,url){try{const r=await fetch(url,{cache:'reload'});if(r.ok){await cache.put(url,r.clone());return r}}catch{}return null}
 async function cacheShell(){const cache=await caches.open(CACHE);const res=await fetch(INDEX,{cache:'reload'});if(!res.ok)throw new Error(`index ${res.status}`);const html=await res.clone().text();await cache.put(INDEX,res.clone());await cache.put('./',res.clone());const refs=[...html.matchAll(/(?:src|href)="(\.\/[^\"]+)"/g)].map(m=>m[1]);const direct=[...new Set(refs.filter(x=>!x.startsWith('./sw.js')))];await Promise.all(direct.map(url=>cacheUrl(cache,url)));const roleRef=direct.find(x=>x.startsWith('./ux-role-loader-v1.js'));if(roleRef){const roleRes=await cacheUrl(cache,roleRef);if(roleRes){const roleText=await roleRes.text();const lazy=[...roleText.matchAll(/['\"](\.\/[^'\"]+)['\"]/g)].map(m=>m[1]);const lazyUnique=[...new Set(lazy.filter(x=>/\.(?:js|css)(?:\?|$)/.test(x)))];await Promise.all(lazyUnique.map(url=>cacheUrl(cache,url)))}}}
