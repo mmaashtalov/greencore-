@@ -1,4 +1,4 @@
-const UXD_VERSION='2026.08.15-dialog2';
+const UXD_VERSION='2026.08.15-dialog3';
 const uxdBypass=new WeakSet();
 let uxdResolve=null,uxdLastFocus=null;
 
@@ -17,7 +17,7 @@ function uxdDialog({title,body='',confirmLabel='Продолжить',danger=fal
       if(e.target===root||e.target.closest('[data-uxd-cancel]'))return uxdClose(null);
       if(e.target.closest('[data-uxd-confirm]')){const values={};root.querySelectorAll('select,textarea,input').forEach(el=>values[el.name]=el.value);uxdClose(fields.length?values:true)}
     });
-    root.addEventListener('keydown',e=>{if(e.key==='Escape'){e.preventDefault();uxdClose(null)}if(e.key==='Tab'){const fs=[...root.querySelectorAll('button,select,textarea,input')].filter(x=>!x.disabled);if(!fs.length)return;const first=fs[0],last=fs[fs.length-1];if(e.shiftKey&&document.activeElement===first){e.preventDefault();last.focus()}else if(!e.shiftKey&&document.activeElement===last){e.preventDefault();first.focus()}}});
+    root.addEventListener('keydown',e=>{if(e.key==='Escape'){e.preventDefault();e.stopPropagation();uxdClose(null);return}if(e.key==='Tab'){const fs=[...root.querySelectorAll('button,select,textarea,input')].filter(x=>!x.disabled);if(!fs.length)return;const first=fs[0],last=fs[fs.length-1];if(e.shiftKey&&document.activeElement===first){e.preventDefault();last.focus()}else if(!e.shiftKey&&document.activeElement===last){e.preventDefault();first.focus()}}});
   })
 }
 window.fleetUxDialog=uxdDialog;
