@@ -1,4 +1,4 @@
-const UXRL_VERSION='2026.08.15-role8';
+const UXRL_VERSION='2026.08.15-role9';
 const loaded=new Set();
 const bundles={
   admin:{
@@ -6,7 +6,7 @@ const bundles={
       './ux-waybills-list-v2.css?v=20260815-1','./ux-waybill-insight-v1.css?v=20260815-1','./ux-desktop-density-v1.css?v=20260815-1','./ux-vehicle-primary-v1.css?v=20260815-1','./ux-breadcrumb-v1.css?v=20260815-1','./ux-filter-v1.css?v=20260815-1','./ux-responsibility-v1.css?v=20260815-1','./ux-global-search-v1.css?v=20260815-1','./ux-recent-work-v1.css?v=20260815-1'
     ],
     js:[
-      './ux-waybills-list-v2.js?v=20260815-1','./ux-waybill-insight-v1.js?v=20260815-1','./ux-vehicle-primary-v1.js?v=20260815-1','./ux-breadcrumb-v1.js?v=20260815-1','./ux-filter-v1.js?v=20260815-1','./ux-responsibility-v1.js?v=20260815-1','./ux-global-search-v1.js?v=20260815-3','./ux-recent-work-v1.js?v=20260815-1'
+      './ux-session-boundary-v1.js?v=20260815-1','./ux-waybills-list-v2.js?v=20260815-1','./ux-waybill-insight-v1.js?v=20260815-1','./ux-vehicle-primary-v1.js?v=20260815-1','./ux-breadcrumb-v1.js?v=20260815-1','./ux-filter-v1.js?v=20260815-1','./ux-responsibility-v1.js?v=20260815-1','./ux-global-search-v1.js?v=20260815-3','./ux-recent-work-v1.js?v=20260815-1'
     ]
   },
   driver:{
@@ -14,7 +14,7 @@ const bundles={
       './connectivity-patch.css?v=20260815-1','./ux-connectivity-v1.css?v=20260815-1','./ux-driver-state-v1.css?v=20260815-1','./ux-driver-form-v1.css?v=20260815-1','./ux-driver-draft-v1.css?v=20260815-1'
     ],
     js:[
-      './connectivity-patch.js?v=20260815-1','./ux-connectivity-v1.js?v=20260815-1','./offline-home-patch.js?v=20260815-2','./ux-driver-state-v1.js?v=20260815-1','./ux-driver-form-v1.js?v=20260815-1','./ux-driver-draft-v1.js?v=20260815-2'
+      './ux-session-boundary-v1.js?v=20260815-1','./connectivity-patch.js?v=20260815-1','./ux-connectivity-v1.js?v=20260815-1','./offline-home-patch.js?v=20260815-2','./ux-driver-state-v1.js?v=20260815-1','./ux-driver-form-v1.js?v=20260815-1','./ux-driver-draft-v1.js?v=20260815-2'
     ]
   }
 };
