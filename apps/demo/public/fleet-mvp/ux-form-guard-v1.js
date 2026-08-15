@@ -1,4 +1,4 @@
-const UXFG_VERSION='2026.08.16-form-guard2';
+const UXFG_VERSION='2026.08.16-form-guard3';
 const trackedIds=new Set(['driverActionForm','issueForm','vehicleCreateForm','driverCreateForm','assignmentForm','incidentCreateForm','maintenanceCompleteForm','repairAssessmentForm']);
 const state=new WeakMap();
 
@@ -62,6 +62,7 @@ function clearBusy(form){
   if(!meta)return;
   meta.submitting=false;
   form.removeAttribute('aria-busy');
+  if(meta.timer){clearTimeout(meta.timer);meta.timer=null}
   const btn=meta.submitButton;
   if(btn?.isConnected && btn.dataset.uxfgOriginal){
     btn.textContent=btn.dataset.uxfgOriginal;
@@ -79,16 +80,22 @@ function setBusy(form){
   meta.submitButton=btn;
   if(!btn.dataset.uxfgOriginal)btn.dataset.uxfgOriginal=(btn.textContent||'Сохранить').trim();
   btn.textContent='Сохраняем…';
+  btn.disabled=true;
   const observer=new MutationObserver(()=>{
     if(!btn.isConnected){observer.disconnect();return}
     if(!btn.disabled){observer.disconnect();clearBusy(form)}
   });
   observer.observe(btn,{attributes:true,attributeFilter:['disabled']});
-  setTimeout(()=>{observer.disconnect();if(form.isConnected&&!btn.disabled)clearBusy(form)},15000);
+  meta.timer=setTimeout(()=>{
+    observer.disconnect();
+    if(!form.isConnected||!meta.submitting)return;
+    btn.disabled=false;
+    clearBusy(form);
+  },30000);
 }
 function decorate(form){
   if(!isTracked(form)||state.has(form))return;
-  state.set(form,{submitting:false,submitButton:null});
+  state.set(form,{submitting:false,submitButton:null,timer:null});
   form.dataset.uxfg=UXFG_VERSION;
   form.addEventListener('input',()=>renderProgress(form));
   form.addEventListener('change',()=>renderProgress(form));
