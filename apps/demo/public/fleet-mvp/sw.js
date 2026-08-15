@@ -1,4 +1,4 @@
-const CACHE='fleet-mvp-shell-20260815-9';
+const CACHE='fleet-mvp-shell-20260815-10';
 const INDEX='./index.html';
 
 async function cacheUrl(cache,url){
@@ -33,50 +33,9 @@ async function cacheShell(){
   }
 }
 
-self.addEventListener('install',event=>{
-  event.waitUntil(cacheShell().then(()=>self.skipWaiting()));
-});
-
-self.addEventListener('activate',event=>{
-  event.waitUntil((async()=>{
-    const keys=await caches.keys();
-    await Promise.all(keys.filter(k=>k.startsWith('fleet-mvp-shell-')&&k!==CACHE).map(k=>caches.delete(k)));
-    await self.clients.claim();
-  })());
-});
-
+self.addEventListener('install',event=>{event.waitUntil(cacheShell().then(()=>self.skipWaiting()))});
+self.addEventListener('activate',event=>{event.waitUntil((async()=>{const keys=await caches.keys();await Promise.all(keys.filter(k=>k.startsWith('fleet-mvp-shell-')&&k!==CACHE).map(k=>caches.delete(k)));await self.clients.claim()})())});
 self.addEventListener('fetch',event=>{
-  const req=event.request;
-  if(req.method!=='GET')return;
-  const url=new URL(req.url);
-  if(url.origin!==self.location.origin)return;
-  if(!url.pathname.includes('/fleet-mvp/'))return;
-
-  if(req.mode==='navigate'){
-    event.respondWith((async()=>{
-      try{
-        const net=await fetch(req);
-        if(net.ok){const c=await caches.open(CACHE);await c.put(INDEX,net.clone());await c.put('./',net.clone())}
-        return net;
-      }catch{
-        return (await caches.match(INDEX))||(await caches.match('./'))||Response.error();
-      }
-    })());
-    return;
-  }
-
-  event.respondWith((async()=>{
-    const relative=url.pathname.split('/fleet-mvp/')[1]||'';
-    const key=`./${relative}${url.search}`;
-    const cached=await caches.match(key)||await caches.match(req);
-    if(cached){
-      event.waitUntil(fetch(req).then(async net=>{if(net.ok){const c=await caches.open(CACHE);await c.put(key,net.clone())}}).catch(()=>{}));
-      return cached;
-    }
-    try{
-      const net=await fetch(req);
-      if(net.ok){const c=await caches.open(CACHE);await c.put(key,net.clone())}
-      return net;
-    }catch{return Response.error()}
-  })());
-});
+  const req=event.request;if(req.method!=='GET')return;const url=new URL(req.url);if(url.origin!==self.location.origin||!url.pathname.includes('/fleet-mvp/'))return;
+  if(req.mode==='navigate'){event.respondWith((async()=>{try{const net=await fetch(req);if(net.ok){const c=await caches.open(CACHE);await c.put(INDEX,net.clone());await c.put('./',net.clone())}return net}catch{return(await caches.match(INDEX))||(await caches.match('./'))||Response.error()}})());return}
+  event.respondWith((async()=>{const relative=url.pathname.split('/fleet-mvp/')[1]||'';const key=`./${relative}${url.search}`;const cached=await caches.match(key)||await caches.match(req);if(cached){event.waitUntil(fetch(req).then(async net=>{if(net.ok){const c=await caches.open(CACHE);await c.put(key,net.clone())}}).catch(()=>{}));return cached}try{const net=await fetch(req);if(net.ok){const c=await caches.open(CACHE);await c.put(key,net.clone())}return net}catch{return Response.error()}})())});
