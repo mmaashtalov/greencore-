@@ -61,14 +61,19 @@ jobs:
               raise SystemExit('Role-specific JS leaked into initial bundle: ' + ', '.join(leaked))
 
           required_lazy = {
-              'connectivity-patch.js','ux-connectivity-v1.js','offline-home-patch.js',
+              'ux-session-boundary-v1.js','connectivity-patch.js','ux-connectivity-v1.js','offline-home-patch.js',
               'ux-driver-state-v1.js','ux-driver-form-v1.js','ux-driver-draft-v1.js',
               'ux-global-search-v1.js','ux-filter-v1.js','ux-breadcrumb-v1.js',
-              'ux-responsibility-v1.js'
+              'ux-responsibility-v1.js','ux-recent-work-v1.js'
           }
           absent = sorted(required_lazy.difference(lazy))
           if absent:
               raise SystemExit('Required role-bundle modules absent: ' + ', '.join(absent))
+
+          session_pos = loader.find('./ux-session-boundary-v1.js')
+          connectivity_pos = loader.find('./connectivity-patch.js')
+          if session_pos < 0 or connectivity_pos < 0 or session_pos > connectivity_pos:
+              raise SystemExit('Session boundary must load before connectivity engine')
 
           all_js = sorted({ref for ref in direct + lazy if ref.endswith('.js')})
           Path('/tmp/fleet_js.txt').write_text('\n'.join(all_js), encoding='utf-8')
