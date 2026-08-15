@@ -21,7 +21,5 @@ jobs:
       - run: pnpm install --no-frozen-lockfile
       - run: pnpm typecheck
       - run: pnpm build
-      - name: Install Render CLI
-        run: curl -fsSL https://raw.githubusercontent.com/render-oss/cli/main/bin/install.sh | sh
-      - name: Validate Render Blueprint
-        run: "$HOME/.local/bin/render" blueprints validate render.yaml
+      # Render Blueprint validation is kept out of the general code CI.
+      # It depends on the external Render toolchain and should be run explicitly.
