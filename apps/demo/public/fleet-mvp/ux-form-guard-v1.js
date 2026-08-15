@@ -1,8 +1,6 @@
-const UXFG_VERSION='2026.08.16-form-guard1';
+const UXFG_VERSION='2026.08.16-form-guard2';
 const trackedIds=new Set(['driverActionForm','issueForm','vehicleCreateForm','driverCreateForm','assignmentForm','incidentCreateForm','maintenanceCompleteForm','repairAssessmentForm']);
 const state=new WeakMap();
-let bypassNavigation=false;
-let activeDialog=null;
 
 function isTracked(form){
   return form instanceof HTMLFormElement && (trackedIds.has(form.id) || form.dataset.uxCritical==='1');
@@ -19,10 +17,8 @@ function requiredUnits(form){
       const key=`${el.type}:${el.name}`;
       if(seen.has(key))continue;
       seen.add(key);
-      units.push({key,els:[...form.querySelectorAll(`input[type="${el.type}"][name="${CSS.escape(el.name)}"]`)].filter(visibleControl)});
-    }else{
-      units.push({key:el.name||el.id||String(units.length),els:[el]});
-    }
+      units.push({els:[...form.querySelectorAll(`input[type="${el.type}"][name="${CSS.escape(el.name)}"]`)].filter(visibleControl)});
+    }else units.push({els:[el]});
   }
   return units;
 }
@@ -61,13 +57,6 @@ function renderProgress(form){
   box.querySelector('i').style.width=`${pct}%`;
   box.classList.toggle('complete',c.done===c.total);
 }
-function markDirty(form){
-  const meta=state.get(form);
-  if(!meta||meta.submitting)return;
-  meta.dirty=true;
-  form.dataset.uxDirty='1';
-  renderProgress(form);
-}
 function clearBusy(form){
   const meta=state.get(form);
   if(!meta)return;
@@ -82,61 +71,29 @@ function clearBusy(form){
 }
 function setBusy(form){
   const meta=state.get(form);
-  if(!meta)return;
+  if(!meta||meta.submitting)return;
   meta.submitting=true;
   form.setAttribute('aria-busy','true');
   const btn=form.querySelector('button[type="submit"]');
-  if(btn){
-    meta.submitButton=btn;
-    if(!btn.dataset.uxfgOriginal)btn.dataset.uxfgOriginal=(btn.textContent||'Сохранить').trim();
-    btn.textContent='Сохраняем…';
-    const observer=new MutationObserver(()=>{
-      if(!btn.isConnected){observer.disconnect();return}
-      if(!btn.disabled){observer.disconnect();clearBusy(form)}
-    });
-    observer.observe(btn,{attributes:true,attributeFilter:['disabled']});
-    setTimeout(()=>{observer.disconnect();if(form.isConnected&&!btn.disabled)clearBusy(form)},15000);
-  }
+  if(!btn)return;
+  meta.submitButton=btn;
+  if(!btn.dataset.uxfgOriginal)btn.dataset.uxfgOriginal=(btn.textContent||'Сохранить').trim();
+  btn.textContent='Сохраняем…';
+  const observer=new MutationObserver(()=>{
+    if(!btn.isConnected){observer.disconnect();return}
+    if(!btn.disabled){observer.disconnect();clearBusy(form)}
+  });
+  observer.observe(btn,{attributes:true,attributeFilter:['disabled']});
+  setTimeout(()=>{observer.disconnect();if(form.isConnected&&!btn.disabled)clearBusy(form)},15000);
 }
 function decorate(form){
   if(!isTracked(form)||state.has(form))return;
-  state.set(form,{dirty:false,submitting:false,submitButton:null});
+  state.set(form,{submitting:false,submitButton:null});
   form.dataset.uxfg=UXFG_VERSION;
-  form.addEventListener('input',()=>markDirty(form));
-  form.addEventListener('change',()=>markDirty(form));
+  form.addEventListener('input',()=>renderProgress(form));
+  form.addEventListener('change',()=>renderProgress(form));
   form.addEventListener('submit',()=>setBusy(form),true);
   renderProgress(form);
-}
-function currentDirtyForm(){
-  return [...document.querySelectorAll('form')].find(form=>isTracked(form)&&state.get(form)?.dirty&&!state.get(form)?.submitting)||null;
-}
-function closeDialog(){
-  activeDialog?.remove();
-  activeDialog=null;
-}
-function showLeaveDialog(target){
-  if(activeDialog)return;
-  const overlay=document.createElement('div');
-  overlay.className='uxfg-modal-backdrop';
-  overlay.innerHTML='<div class="uxfg-modal" role="dialog" aria-modal="true" aria-labelledby="uxfgTitle"><div class="uxfg-modal-icon">!</div><div class="uxfg-modal-copy"><h2 id="uxfgTitle">Есть несохранённые данные</h2><p>Если уйти с этого экрана, введённые изменения будут потеряны.</p></div><div class="uxfg-modal-actions"><button type="button" class="ghost-btn" data-uxfg-leave>Уйти без сохранения</button><button type="button" class="primary-btn" data-uxfg-stay>Остаться</button></div></div>';
-  document.body.appendChild(overlay);
-  activeDialog=overlay;
-  const stay=overlay.querySelector('[data-uxfg-stay]');
-  const leave=overlay.querySelector('[data-uxfg-leave]');
-  stay.focus();
-  stay.addEventListener('click',closeDialog);
-  leave.addEventListener('click',()=>{
-    const form=currentDirtyForm();
-    const meta=form&&state.get(form);
-    if(meta){meta.dirty=false;form.removeAttribute('data-ux-dirty')}
-    closeDialog();
-    bypassNavigation=true;
-    try{target.click()}finally{queueMicrotask(()=>{bypassNavigation=false})}
-  });
-  overlay.addEventListener('click',e=>{if(e.target===overlay)closeDialog()});
-}
-function navigationTarget(node){
-  return node?.closest?.('[data-action="back"],[data-action="main-nav"],[data-action="logout"],.nav-btn,.back-btn');
 }
 function scan(){document.querySelectorAll('form').forEach(decorate)}
 let pending=false;
@@ -144,28 +101,13 @@ function schedule(){if(pending)return;pending=true;queueMicrotask(()=>{pending=f
 
 new MutationObserver(schedule).observe(document.documentElement,{childList:true,subtree:true});
 window.addEventListener('fleet:ui-ready',schedule);
-document.addEventListener('click',e=>{
-  if(bypassNavigation)return;
-  const target=navigationTarget(e.target);
-  if(!target||!currentDirtyForm())return;
-  e.preventDefault();
-  e.stopImmediatePropagation();
-  showLeaveDialog(target);
-},true);
 document.addEventListener('invalid',e=>{
   const field=e.target;
   const form=field?.form;
   if(!isTracked(form))return;
-  field.closest('.field')?.classList.add('uxfg-invalid');
-  setTimeout(()=>field.closest('.field')?.classList.remove('uxfg-invalid'),1800);
+  const host=field.closest('.field');
+  host?.classList.add('uxfg-invalid');
+  field.scrollIntoView?.({block:'center',behavior:'smooth'});
+  setTimeout(()=>host?.classList.remove('uxfg-invalid'),1800);
 },true);
-window.addEventListener('beforeunload',e=>{
-  if(!currentDirtyForm())return;
-  e.preventDefault();
-  e.returnValue='';
-});
-document.addEventListener('keydown',e=>{
-  if(!activeDialog)return;
-  if(e.key==='Escape'){e.preventDefault();closeDialog()}
-});
 schedule();
