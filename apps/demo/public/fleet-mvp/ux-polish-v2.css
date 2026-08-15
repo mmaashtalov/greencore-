@@ -41,6 +41,16 @@ body[data-ux-screen="home"] .page-head{margin-bottom:10px}
 .ux-card-open{margin-top:10px;padding-top:9px;border-top:1px solid rgba(152,162,179,.18);display:flex;align-items:center;justify-content:space-between;color:var(--primary);font-size:12px;font-weight:850}
 .ux-card-open span:last-child{font-size:18px;color:#98a2b3}
 
+.ux-list-tools{display:flex;align-items:center;gap:10px;margin:-2px 0 14px}
+.ux-search{position:relative;display:flex;align-items:center;flex:1;min-width:0}
+.ux-search>span{position:absolute;left:13px;z-index:1;color:#667085;font-size:19px;pointer-events:none}
+.ux-search input{padding-left:40px;padding-right:42px;min-height:46px;background:#fff;border-color:#d5dae1;box-shadow:0 1px 1px rgba(15,23,42,.02)}
+.ux-search input::-webkit-search-cancel-button{display:none}
+.ux-search-clear{position:absolute;right:7px;width:32px;height:32px;border:0;background:#f2f4f7;color:#667085;border-radius:9px;font-size:20px;line-height:1;padding:0}
+.ux-search-count{flex:0 0 auto;min-width:48px;text-align:center;font-size:11px;font-weight:850;color:#667085;background:#fff;border:1px solid var(--line);border-radius:999px;padding:7px 9px}
+.ux-search-empty{margin-top:10px}
+[hidden]{display:none!important}
+
 .clickable[data-action]:focus-visible,
 .nav-btn:focus-visible,
 button:focus-visible,
@@ -76,6 +86,10 @@ details[open] > summary .ux-summary-chevron{transform:rotate(180deg)}
   .ux-command{align-items:stretch;flex-direction:column;padding:14px;margin-bottom:12px;gap:11px}
   .ux-command-copy strong{font-size:17px}
   .ux-command-btn{width:100%;min-height:48px}
+
+  .ux-list-tools{position:sticky;top:calc(58px + env(safe-area-inset-top));z-index:24;background:rgba(244,246,248,.95);backdrop-filter:blur(8px);padding:7px 0;margin:-4px 0 9px}
+  .ux-search input{min-height:44px;font-size:15px}
+  .ux-search-count{min-width:44px}
 
   form .ux-sticky-submit{
     position:sticky;bottom:calc(72px + env(safe-area-inset-bottom));
