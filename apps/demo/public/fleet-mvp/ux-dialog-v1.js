@@ -1,4 +1,4 @@
-const UXD_VERSION='2026.08.15-dialog3';
+const UXD_VERSION='2026.08.16-dialog4';
 const uxdBypass=new WeakSet();
 let uxdResolve=null,uxdLastFocus=null;
 
@@ -41,7 +41,7 @@ async function uxdInterceptClick(e){const el=e.target.closest('[data-action]');i
     e.preventDefault();e.stopImmediatePropagation();const label=(el.textContent||'').trim();const ok=await uxdDialog({title:'Изменить этап ремонта?',body:`Действие: «${label}». Изменение будет сохранено в истории ремонта.`,confirmLabel:'Продолжить'});if(ok)uxdReplayClick(el);return;
   }
   if(a==='return-correction'){
-    e.preventDefault();e.stopImmediatePropagation();const v=await uxdDialog({title:'Вернуть путевой лист на исправление',body:'Водитель увидит понятное замечание и сможет отправить данные повторно.',confirmLabel:'Вернуть водителю',fields:[{type:'select',name:'type',label:'Что проверить',value:'other',options:[{value:'closing_state',label:'Конечные показания'},{value:'route',label:'Маршрут'},{value:'refuel',label:'Заправки'},{value:'other',label:'Другое'}]},{type:'textarea',name:'message',label:'Комментарий водителю',value:'Проверьте данные и отправьте повторно.',placeholder:'Что именно нужно проверить'}]});if(v&&v.message?.trim())uxdReplayClick(el,{prompts:[v.type,v.message.trim()]});return;
+    e.preventDefault();e.stopImmediatePropagation();const v=await uxdDialog({title:'Вернуть путевой лист на исправление',body:'Водитель увидит понятное замечание и сможет отправить данные повторно.',confirmLabel:'Вернуть водителю',fields:[{type:'select',name:'type',label:'Что проверить',value:'other',options:[{value:'closing_readings',label:'Конечные показания'},{value:'route',label:'Маршрут'},{value:'refuel',label:'Заправки'},{value:'other',label:'Другое'}]},{type:'textarea',name:'message',label:'Комментарий водителю',value:'Проверьте данные и отправьте повторно.',placeholder:'Что именно нужно проверить'}]});if(v&&v.message?.trim())uxdReplayClick(el,{prompts:[v.type,v.message.trim()]});return;
   }
 }
 document.addEventListener('click',uxdInterceptClick,true);
