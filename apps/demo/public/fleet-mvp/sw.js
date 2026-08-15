@@ -1,5 +1,13 @@
-const CACHE='fleet-mvp-shell-20260815-5';
+const CACHE='fleet-mvp-shell-20260815-6';
 const INDEX='./index.html';
+
+async function cacheUrl(cache,url){
+  try{
+    const r=await fetch(url,{cache:'reload'});
+    if(r.ok){await cache.put(url,r.clone());return r}
+  }catch{}
+  return null;
+}
 
 async function cacheShell(){
   const cache=await caches.open(CACHE);
@@ -8,11 +16,21 @@ async function cacheShell(){
   const html=await res.clone().text();
   await cache.put(INDEX,res.clone());
   await cache.put('./',res.clone());
+
   const refs=[...html.matchAll(/(?:src|href)="(\.\/[^\"]+)"/g)].map(m=>m[1]);
-  const unique=[...new Set(refs.filter(x=>!x.startsWith('./sw.js')))];
-  await Promise.all(unique.map(async url=>{
-    try{const r=await fetch(url,{cache:'reload'});if(r.ok)await cache.put(url,r.clone())}catch{}
-  }));
+  const direct=[...new Set(refs.filter(x=>!x.startsWith('./sw.js')))];
+  await Promise.all(direct.map(url=>cacheUrl(cache,url)));
+
+  const roleRef=direct.find(x=>x.startsWith('./ux-role-loader-v1.js'));
+  if(roleRef){
+    const roleRes=await cacheUrl(cache,roleRef);
+    if(roleRes){
+      const roleText=await roleRes.text();
+      const lazy=[...roleText.matchAll(/['\"](\.\/[^'\"]+)['\"]/g)].map(m=>m[1]);
+      const lazyUnique=[...new Set(lazy.filter(x=>/\.(?:js|css)(?:\?|$)/.test(x)))];
+      await Promise.all(lazyUnique.map(url=>cacheUrl(cache,url)));
+    }
+  }
 }
 
 self.addEventListener('install',event=>{
