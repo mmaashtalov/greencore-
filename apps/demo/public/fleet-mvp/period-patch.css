@@ -4,13 +4,18 @@
 .period-task{align-items:center}
 .period-inline-btn{flex:0 0 auto;min-height:42px;padding:0 12px}
 .period-primary{margin:20px 0 6px}
-.period-modal-backdrop{position:fixed;z-index:140;inset:0;background:rgba(15,23,42,.58);display:grid;place-items:center;padding:16px}
+.period-modal-backdrop{position:fixed;z-index:1700;inset:0;background:rgba(15,23,42,.58);display:grid;place-items:center;padding:16px}
 .period-modal{width:min(520px,100%);max-height:calc(100vh - 32px);overflow:auto;background:#fff;border-radius:20px;padding:18px;box-shadow:0 24px 80px rgba(15,23,42,.28)}
 .period-modal-head{display:flex;align-items:flex-start;justify-content:space-between;gap:12px}
 .icon-close{width:42px;height:42px;flex:0 0 auto;border:1px solid #dfe3e8;border-radius:12px;background:#fff;font-size:25px;line-height:1;color:#475467}
+.period-modal-warning{margin:15px 0;padding:12px 13px;border:1px solid #fedf89;border-radius:13px;background:#fffaeb;color:#7a2e0e;font-size:12px;line-height:1.45}
+.period-modal-actions{display:flex;gap:8px;margin-top:16px}.period-modal-actions>*{flex:1}
+.period-dirty-note{min-height:16px;margin-top:4px;text-align:right;color:#667085;font-size:11px}
+.period-discard-confirm{margin-top:14px;padding:12px;border:1px solid #fedf89;border-radius:13px;background:#fffaeb}.period-discard-confirm strong{display:block;color:#7a2e0e;font-size:13px}.period-discard-confirm span{display:block;margin-top:3px;color:#667085;font-size:11px}.period-discard-actions{display:flex;gap:8px;margin-top:10px}.period-discard-actions>*{flex:1;min-height:44px}
 @media(max-width:720px){
 .period-modal-backdrop{align-items:end;padding:0}
 .period-modal{width:100%;max-height:88vh;border-radius:22px 22px 0 0;padding:18px 16px calc(18px + env(safe-area-inset-bottom))}
 .period-task{align-items:flex-start;flex-wrap:wrap}.period-inline-btn{width:100%;margin-top:4px}
 .period-metrics{grid-template-columns:repeat(3,minmax(0,1fr))!important;gap:8px!important}.period-metrics .metric{padding:12px 8px}.period-metrics .metric-value{font-size:22px}.period-metrics .metric-label{font-size:11px}
+.period-modal-actions,.period-discard-actions{display:grid;grid-template-columns:1fr}
 }
