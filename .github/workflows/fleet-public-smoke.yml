@@ -27,7 +27,7 @@ jobs:
         with:
           node-version: 22
 
-      - name: Validate canonical Fleet manifest
+      - name: Validate canonical Fleet manifest and role bundles
         shell: bash
         run: |
           set -euo pipefail
@@ -35,17 +35,44 @@ jobs:
           python - <<'PY'
           from pathlib import Path
           import re
+
           html = Path('index.html').read_text(encoding='utf-8')
-          refs = re.findall(r'(?:src|href)="\.\/([^"?]+)', html)
-          missing = [ref for ref in refs if not Path(ref).is_file()]
+          direct = re.findall(r'(?:src|href)="\.\/([^"?]+)', html)
+          missing = [ref for ref in direct if not Path(ref).is_file()]
           if missing:
-              raise SystemExit('Missing referenced files: ' + ', '.join(missing))
-          duplicates = sorted({ref for ref in refs if refs.count(ref) > 1})
+              raise SystemExit('Missing directly referenced files: ' + ', '.join(missing))
+          duplicates = sorted({ref for ref in direct if direct.count(ref) > 1})
           if duplicates:
-              raise SystemExit('Duplicate references: ' + ', '.join(duplicates))
-          js = [ref for ref in refs if ref.endswith('.js')]
-          Path('/tmp/fleet_js.txt').write_text('\n'.join(js), encoding='utf-8')
-          print('References OK:', ', '.join(refs))
+              raise SystemExit('Duplicate direct references: ' + ', '.join(duplicates))
+
+          loader = Path('ux-role-loader-v1.js').read_text(encoding='utf-8')
+          lazy = re.findall(r"['\"]\.\/([^'\"?]+)(?:\?[^'\"]*)?['\"]", loader)
+          lazy_missing = [ref for ref in lazy if not Path(ref).is_file()]
+          if lazy_missing:
+              raise SystemExit('Missing role-bundle files: ' + ', '.join(lazy_missing))
+
+          forbidden_initial = {
+              'connectivity-patch.js','ux-connectivity-v1.js','offline-home-patch.js',
+              'ux-driver-state-v1.js','ux-driver-form-v1.js','ux-driver-draft-v1.js',
+              'ux-global-search-v1.js','ux-filter-v1.js','ux-breadcrumb-v1.js'
+          }
+          leaked = sorted(forbidden_initial.intersection(direct))
+          if leaked:
+              raise SystemExit('Role-specific JS leaked into initial bundle: ' + ', '.join(leaked))
+
+          required_lazy = {
+              'connectivity-patch.js','ux-connectivity-v1.js','offline-home-patch.js',
+              'ux-driver-state-v1.js','ux-driver-form-v1.js','ux-driver-draft-v1.js',
+              'ux-global-search-v1.js','ux-filter-v1.js','ux-breadcrumb-v1.js',
+              'ux-responsibility-v1.js'
+          }
+          absent = sorted(required_lazy.difference(lazy))
+          if absent:
+              raise SystemExit('Required role-bundle modules absent: ' + ', '.join(absent))
+
+          all_js = sorted({ref for ref in direct + lazy if ref.endswith('.js')})
+          Path('/tmp/fleet_js.txt').write_text('\n'.join(all_js), encoding='utf-8')
+          print(f'Direct refs OK: {len(direct)}; lazy refs OK: {len(lazy)}; JS checked: {len(all_js)}')
           PY
           while IFS= read -r file; do
             test -s "$file"
