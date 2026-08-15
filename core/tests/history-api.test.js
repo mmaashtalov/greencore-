@@ -92,6 +92,88 @@ test('events and commands are exposed with bounded filters', async t => {
   assert.match(invalidDate.body.message, /valid date/);
 });
 
+test('policy journal exposes decisions, evidence and SQLite history', async t => {
+  const f = await fixture();
+  t.after(async () => {
+    await close(f.server);
+    f.history.close();
+  });
+
+  await post(f.request, '/mode', { mode: 'AUTO' });
+  for (const sample of [
+    { device_id: 'soil_01', metric: 'soil_moisture', value: 40, unit: '%', quality: 'GOOD', timestamp: '2026-07-28T13:59:30.000Z' },
+    { device_id: 'air_01', metric: 'air_temperature', value: 30, unit: '°C', quality: 'GOOD', timestamp: '2026-07-28T13:59:30.000Z' },
+    { device_id: 'water_01', metric: 'water_level', value: 50, unit: '%', quality: 'GOOD', timestamp: '2026-07-28T13:59:30.000Z' }
+  ]) {
+    const accepted = await post(f.request, '/controllers/controller_primary/telemetry', sample);
+    assert.equal(accepted.response.status, 202);
+  }
+
+  const evaluated = await post(f.request, '/evaluate', {});
+  assert.equal(evaluated.response.status, 200);
+  assert.equal(evaluated.body.commands.length, 2);
+
+  const journal = await f.request('/policy/decisions?limit=10');
+  assert.equal(journal.response.status, 200);
+  assert.equal(journal.body.decisions.length, 2);
+  assert.ok(journal.body.decisions.every(decision => decision.effect === 'ALLOW'));
+  assert.ok(journal.body.decisions.every(decision => decision.decision_id.startsWith('pdec_')));
+  assert.ok(journal.body.decisions.some(decision => decision.context.telemetry.soil_moisture.value === 40));
+
+  const history = await f.request('/history/policy-decisions?effect=ALLOW&limit=10');
+  assert.equal(history.response.status, 200);
+  assert.equal(history.body.decisions.length, 2);
+  assert.deepEqual(
+    new Set(history.body.decisions.map(decision => decision.decision_id)),
+    new Set(journal.body.decisions.map(decision => decision.decision_id))
+  );
+
+  const stats = await f.request('/history/stats');
+  assert.equal(stats.body.schema_version, 2);
+  assert.equal(stats.body.counts.policy_decision_history, 2);
+});
+
+test('denied policy decision is journaled with evidence and a specialized alert', async t => {
+  const f = await fixture();
+  t.after(async () => {
+    await close(f.server);
+    f.history.close();
+  });
+
+  await post(f.request, '/mode', { mode: 'MANUAL' });
+  for (const sample of [
+    { device_id: 'soil_01', metric: 'soil_moisture', value: 30, unit: '%', quality: 'GOOD', timestamp: '2026-07-28T13:59:30.000Z' },
+    { device_id: 'air_01', metric: 'air_temperature', value: 22, unit: '°C', quality: 'GOOD', timestamp: '2026-07-28T13:59:30.000Z' },
+    { device_id: 'water_01', metric: 'water_level', value: 10, unit: '%', quality: 'GOOD', timestamp: '2026-07-28T13:59:30.000Z' }
+  ]) {
+    const accepted = await post(f.request, '/controllers/controller_primary/telemetry', sample);
+    assert.equal(accepted.response.status, 202);
+  }
+
+  const queued = await post(f.request, '/manual-commands', {
+    actuator_id: 'pump_01',
+    action: 'ON',
+    reason: 'journal deny test'
+  });
+  assert.equal(queued.response.status, 202);
+  const evaluated = await post(f.request, '/evaluate', {});
+  assert.equal(evaluated.response.status, 200);
+  assert.equal(evaluated.body.commands.length, 0);
+
+  const journal = await f.request('/policy/decisions?limit=10');
+  assert.equal(journal.response.status, 200);
+  assert.equal(journal.body.decisions.length, 1);
+  assert.equal(journal.body.decisions[0].effect, 'DENY');
+  assert.equal(journal.body.decisions[0].policy_id, 'deny-pump-on-low-water');
+  assert.equal(journal.body.decisions[0].evidence.some(item => item.fact === 'telemetry.water_level.value' && item.observed === 10), true);
+
+  const alerts = await f.request('/alerts');
+  assert.equal(alerts.body.alerts.some(alert => alert.type === 'POLICY_DENIED_PUMP_LOW_WATER'), true);
+  const history = await f.request('/history/policy-decisions?effect=DENY&policy_id=deny-pump-on-low-water');
+  assert.equal(history.body.decisions.length, 1);
+  assert.equal(history.body.decisions[0].decision_id, journal.body.decisions[0].decision_id);
+});
+
 test('history routes report capability absence explicitly', async t => {
   const f = await fixture({ withHistory: false });
   t.after(() => close(f.server));

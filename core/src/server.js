@@ -34,6 +34,7 @@ const history = new SqliteHistoryStore({
     events: Number(process.env.MAX_EVENT_HISTORY ?? 100000),
     alerts: Number(process.env.MAX_ALERT_HISTORY ?? 50000),
     commands: Number(process.env.MAX_COMMAND_HISTORY ?? 100000),
+    policyDecisions: Number(process.env.MAX_POLICY_DECISION_HISTORY ?? 100000),
     simulations: Number(process.env.MAX_SIMULATION_HISTORY ?? 1000)
   }
 });

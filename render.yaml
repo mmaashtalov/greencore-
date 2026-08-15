@@ -54,10 +54,8 @@ services:
         value: "1"
       - key: SIMULATION_MAX_QUEUE
         value: "4"
-      - key: RATE_LIMIT_SIMULATION_LIMIT
+      - key: RATE_LIMIT_SIMULATION_PER_MINUTE
         value: "6"
-      - key: RATE_LIMIT_SIMULATION_WINDOW_MS
-        value: "60000"
       - key: LIVE_MAX_CLIENTS
         value: "100"
       - key: LIVE_REPLAY_LIMIT
@@ -73,6 +71,8 @@ services:
       - key: MAX_ALERT_HISTORY
         value: "50000"
       - key: MAX_COMMAND_HISTORY
+        value: "100000"
+      - key: MAX_POLICY_DECISION_HISTORY
         value: "100000"
     disk:
       name: greencore-data

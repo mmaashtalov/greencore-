@@ -108,6 +108,40 @@ export type LiveAlert = {
   details?: Record<string, unknown>;
 };
 
+export type LivePolicyEvidence = {
+  fact: string;
+  operator: string;
+  observed?: unknown;
+  expected?: unknown;
+  matched: boolean;
+};
+
+export type LivePolicyDecision = {
+  decision_id: string;
+  evaluated_at: string;
+  policy_version: string;
+  effect: 'ALLOW' | 'DENY';
+  policy_id?: string | null;
+  summary: string;
+  alert_type?: string | null;
+  evidence: LivePolicyEvidence[];
+  context: {
+    command: {
+      actuator_id?: string;
+      action?: string;
+      source?: string;
+      reason?: string;
+    };
+    telemetry: Record<string, {
+      state?: string;
+      usable?: boolean;
+      value?: number | null;
+      quality?: string | null;
+      age_seconds?: number | null;
+    }>;
+  };
+};
+
 export type LiveRuntimeState = {
   generated_at: string;
   configured_mode: string;
@@ -118,6 +152,8 @@ export type LiveRuntimeState = {
   controllers: LiveController[];
   pending_commands: LiveCommand[];
   alerts: LiveAlert[];
+  policy_contract?: { version: string; status: string };
+  policy_decisions: LivePolicyDecision[];
 };
 
 export type LiveSnapshot = {
@@ -254,6 +290,54 @@ function alertList(value: unknown): LiveAlert[] {
   });
 }
 
+function policyDecisionList(value: unknown): LivePolicyDecision[] {
+  if (!Array.isArray(value)) return [];
+  return value.map(raw => {
+    const decision = record(raw);
+    const context = record(decision.context);
+    const command = record(context.command);
+    const evidence = Array.isArray(decision.evidence) ? decision.evidence.map(rawEvidence => {
+      const item = record(rawEvidence);
+      return {
+        fact: text(item.fact, 'unknown.fact'),
+        operator: text(item.operator, 'observed'),
+        observed: item.observed,
+        expected: item.expected,
+        matched: item.matched === true,
+      };
+    }) : [];
+    const telemetry = Object.fromEntries(Object.entries(record(context.telemetry)).map(([metric, rawTelemetry]) => {
+      const item = record(rawTelemetry);
+      return [metric, {
+        state: text(item.state) || undefined,
+        usable: typeof item.usable === 'boolean' ? item.usable : undefined,
+        value: finite(item.value),
+        quality: text(item.quality) || null,
+        age_seconds: finite(item.age_seconds),
+      }];
+    }));
+    return {
+      decision_id: text(decision.decision_id, 'unknown-decision'),
+      evaluated_at: text(decision.evaluated_at),
+      policy_version: text(decision.policy_version, 'unknown'),
+      effect: decision.effect === 'DENY' ? 'DENY' : 'ALLOW',
+      policy_id: text(decision.policy_id) || null,
+      summary: text(decision.summary, 'Решение без объяснения'),
+      alert_type: text(decision.alert_type) || null,
+      evidence,
+      context: {
+        command: {
+          actuator_id: text(command.actuator_id) || undefined,
+          action: text(command.action) || undefined,
+          source: text(command.source) || undefined,
+          reason: text(command.reason) || undefined,
+        },
+        telemetry,
+      },
+    };
+  });
+}
+
 function queueStatus(value: unknown): SimulationQueueStatus {
   const queue = record(value);
   return {
@@ -281,6 +365,10 @@ function runtimeState(value: unknown): LiveRuntimeState {
     controllers: controllerList(state.controllers),
     pending_commands: commands,
     alerts: alertList(state.alerts),
+    policy_contract: record(state.policy_contract).version
+      ? { version: text(record(state.policy_contract).version), status: text(record(state.policy_contract).status) }
+      : undefined,
+    policy_decisions: policyDecisionList(state.policy_decisions),
   };
 }
 

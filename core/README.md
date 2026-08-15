@@ -25,6 +25,7 @@
 - Scenario Runner и Fault Campaign Runner с машинным PASS/FAIL;
 - SQLite migrations, WAL, busy timeout, prepared statements и retention limits;
 - историческая аналитика и временные telemetry-агрегаты;
+- Decision Journal: policy-решения с `decision_id`, эффектом, правилом, evidence и контекстом команды;
 - Bearer / `x-api-key` аутентификация и роли `admin`, `operator`, `controller`;
 - fixed-window rate limiting по отдельным классам запросов;
 - bounded simulation scheduler с контролируемой очередью;
@@ -79,6 +80,7 @@ CONTROLLER_API_KEY='controller-secret' npm run emulator:controller
 | `MAX_EVENT_HISTORY` | `100000` | события в SQLite |
 | `MAX_ALERT_HISTORY` | `50000` | тревоги в SQLite |
 | `MAX_COMMAND_HISTORY` | `100000` | команды в SQLite |
+| `MAX_POLICY_DECISION_HISTORY` | `100000` | policy-решения в SQLite |
 | `CORS_ORIGIN` | `*` | разрешённый origin dashboard |
 | `AUTOMATION_ENABLED` | `true` | автоматический цикл |
 | `EVALUATION_INTERVAL_MS` | `5000` | интервал решений |
@@ -213,6 +215,7 @@ GET /live/status
 telemetry_history
 event_history
 alert_history
+policy_decision_history
 command_history
 simulation_reports
 schema_migrations
@@ -230,6 +233,7 @@ schema_migrations
 | `GET` | `/history/telemetry` | `metric`, `device_id`, `controller_id`, `quality`, `from`, `to`, `limit` |
 | `GET` | `/history/events` | `type`, `from`, `to`, `limit` |
 | `GET` | `/history/alerts` | `type`, `from`, `to`, `limit` |
+| `GET` | `/history/policy-decisions` | `effect`, `policy_id`, `actuator_id`, `action`, `from`, `to`, `limit` |
 | `GET` | `/history/commands` | `status`, `actuator_id`, `controller_id`, `action`, `from`, `to`, `limit` |
 
 ## Historical Analytics API
@@ -266,6 +270,8 @@ schema_migrations
 | `GET` | `/state` | operator/admin |
 | `GET` | `/alerts` | operator/admin |
 | `GET` | `/events` | operator/admin |
+| `GET` | `/policy/catalog` | read/public-read |
+| `GET` | `/policy/decisions` | operator/admin |
 | `POST` | `/mode` | operator/admin |
 | `POST` | `/connectivity` | operator/admin |
 | `POST` | `/manual-commands` | operator/admin |
