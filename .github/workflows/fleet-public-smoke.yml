@@ -27,30 +27,7 @@ jobs:
         with:
           node-version: 22
 
-      - name: Check JavaScript syntax
-        shell: bash
-        run: |
-          set -euo pipefail
-          cd apps/demo/public/fleet-mvp
-          for file in \
-            app.js \
-            ui-patch.js \
-            period-patch.js \
-            review-patch.js \
-            driver-correction-patch.js \
-            state-action-patch.js \
-            create-form-patch.js \
-            assignment-patch.js \
-            incident-package-patch.js \
-            fleet-patch.js \
-            waybills-list-patch.js \
-            statement-print-patch.js \
-            ux-bridge.js; do
-            test -s "$file"
-            node --check "$file"
-          done
-
-      - name: Verify index references exist
+      - name: Validate canonical Fleet manifest
         shell: bash
         run: |
           set -euo pipefail
@@ -66,5 +43,11 @@ jobs:
           duplicates = sorted({ref for ref in refs if refs.count(ref) > 1})
           if duplicates:
               raise SystemExit('Duplicate references: ' + ', '.join(duplicates))
+          js = [ref for ref in refs if ref.endswith('.js')]
+          Path('/tmp/fleet_js.txt').write_text('\n'.join(js), encoding='utf-8')
           print('References OK:', ', '.join(refs))
           PY
+          while IFS= read -r file; do
+            test -s "$file"
+            node --check "$file"
+          done < /tmp/fleet_js.txt
