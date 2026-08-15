@@ -1,4 +1,4 @@
-const UXI_VERSION='2026.08.16-inbox1';
+const UXI_VERSION='2026.08.16-inbox2';
 const UXI_CFG={
   url:'https://tikjmiyrhkcjrxjylmqb.supabase.co',
   key:'sb_publishable_clr5P9USk7b63MajJmmr9A_Iz0wi_0F',
@@ -107,14 +107,24 @@ function uxiToast(text,type=''){
 function uxiEmpty(){
   return '<div class="uxi-empty"><div class="uxi-empty-mark">✓</div><strong>Новых сообщений нет</strong><span>Здесь появятся замечания, предупреждения и системные сообщения.</span></div>';
 }
+function uxiTarget(item){
+  const role=uxiRole();
+  if(role==='driver'&&item.notification_type==='waybill_correction')return {id:'driver_correction',label:'Исправить сейчас'};
+  if(role==='admin'&&item.notification_type==='waybill_correction_submitted')return {id:'review_queue',label:'Открыть проверку'};
+  if(role==='admin'&&item.notification_type==='maintenance_due')return {id:'service',label:'Открыть ТО'};
+  if(role==='admin'&&item.notification_type==='repair')return {id:'service',label:'Открыть ремонт'};
+  if(role==='admin'&&item.notification_type==='incident')return {id:'incidents',label:'Открыть происшествия'};
+  return null;
+}
 function uxiItem(item){
   const unread=!item.is_read;
+  const target=uxiTarget(item);
   return `<article class="uxi-item ${unread?'unread':''}" data-uxi-id="${uxiEsc(item.id)}">
     <div class="uxi-dot" aria-hidden="true"></div>
     <div class="uxi-copy">
       <div class="uxi-item-head"><strong>${uxiEsc(item.title||'Уведомление')}</strong><time>${uxiEsc(uxiDate(item.created_at))}</time></div>
       <p>${uxiEsc(item.body||'')}</p>
-      ${unread?`<button type="button" class="uxi-read" data-uxi-read="${uxiEsc(item.id)}">Отметить прочитанным</button>`:''}
+      ${(target||unread)?`<div class="uxi-actions">${target?`<button type="button" class="uxi-go" data-uxi-go="${uxiEsc(target.id)}" data-uxi-notification="${uxiEsc(item.id)}">${uxiEsc(target.label)}</button>`:''}${unread?`<button type="button" class="uxi-read" data-uxi-read="${uxiEsc(item.id)}">Прочитано</button>`:''}</div>`:''}
     </div>
   </article>`;
 }
@@ -167,13 +177,17 @@ function uxiOpen(){
   overlay.querySelector('[data-uxi-close]')?.focus();
   uxiReload();
 }
+async function uxiPatchRead(id){
+  if(!id)return;
+  await uxiFetch(`/rest/v1/notifications?id=eq.${encodeURIComponent(id)}`,{
+    method:'PATCH',headers:{Prefer:'return=minimal'},body:JSON.stringify({is_read:true})
+  });
+}
 async function uxiMarkRead(id,button){
   if(!id||button?.disabled)return;
   if(button)button.disabled=true;
   try{
-    await uxiFetch(`/rest/v1/notifications?id=eq.${encodeURIComponent(id)}`,{
-      method:'PATCH',headers:{Prefer:'return=minimal'},body:JSON.stringify({is_read:true})
-    });
+    await uxiPatchRead(id);
     const item=uxiOverlay?.querySelector(`[data-uxi-id="${CSS.escape(id)}"]`);
     item?.classList.remove('unread');
     button?.remove();
@@ -185,6 +199,30 @@ async function uxiMarkRead(id,button){
     if(button)button.disabled=false;
     uxiToast(error.message||'Не удалось отметить сообщение','error');
   }
+}
+function uxiDispatchAction(action,data={}){
+  const node=document.createElement('button');
+  node.type='button';
+  node.hidden=true;
+  node.dataset.action=action;
+  for(const [key,value] of Object.entries(data))node.dataset[key]=value;
+  document.body.appendChild(node);
+  node.click();
+  queueMicrotask(()=>node.remove());
+}
+function uxiNavigate(target){
+  if(target==='driver_correction')return uxiDispatchAction('driver-action',{driverAction:'open_corrections'});
+  if(target==='review_queue')return uxiDispatchAction('open-review-queue');
+  if(target==='service')return uxiDispatchAction('main-nav',{id:'service'});
+  if(target==='incidents')return uxiDispatchAction('open-incidents');
+}
+async function uxiGo(target,id,button){
+  if(button?.disabled)return;
+  if(button)button.disabled=true;
+  try{await uxiPatchRead(id)}catch{}
+  uxiSetBadge(Math.max(0,Number(document.querySelector('[data-uxi-open] .uxi-badge')?.textContent||1)-1));
+  uxiClose();
+  queueMicrotask(()=>uxiNavigate(target));
 }
 async function uxiRefreshBadge(){
   if(!uxiSession()||!['admin','driver'].includes(uxiRole())){uxiSetBadge(0);return}
@@ -200,6 +238,8 @@ document.addEventListener('click',event=>{
   if(event.target.closest('[data-uxi-close]')){event.preventDefault();uxiClose();return}
   if(event.target===uxiOverlay){uxiClose();return}
   if(event.target.closest('[data-uxi-refresh],[data-uxi-retry]')){event.preventDefault();uxiReload();return}
+  const go=event.target.closest('[data-uxi-go]');
+  if(go){event.preventDefault();uxiGo(go.dataset.uxiGo,go.dataset.uxiNotification,go);return}
   const read=event.target.closest('[data-uxi-read]');
   if(read){event.preventDefault();uxiMarkRead(read.dataset.uxiRead,read)}
 },true);
