@@ -198,6 +198,13 @@ begin
       end
   where id = c.id;
 
+  update public.notifications
+  set is_read = true
+  where employee_id = emp
+    and vehicle_id = wb.vehicle_id
+    and notification_type = 'waybill_correction'
+    and not is_read;
+
   insert into public.notifications(
     employee_id,
     vehicle_id,
