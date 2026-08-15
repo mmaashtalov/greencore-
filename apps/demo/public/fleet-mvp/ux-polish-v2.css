@@ -1,0 +1,113 @@
+/* Continuous UX polish: hierarchy, focus, touch ergonomics */
+:root{
+  --ux-focus:0 0 0 3px rgba(31,58,95,.16);
+  --ux-soft-shadow:0 8px 24px rgba(15,23,42,.06);
+}
+
+body[data-ux-screen="home"] .main{padding-top:14px}
+body[data-ux-screen="home"] .page-head{margin-bottom:10px}
+
+.ux-command{
+  display:flex;align-items:center;justify-content:space-between;gap:16px;
+  border:1px solid var(--line);border-radius:18px;padding:15px 16px;margin-bottom:14px;
+  background:#fff;box-shadow:var(--ux-soft-shadow)
+}
+.ux-command.has-work{border-color:#f4d58d;background:linear-gradient(135deg,#fffdf7,#fff9e9)}
+.ux-command.all-clear{border-color:#b7e4c7;background:linear-gradient(135deg,#fbfffc,#effbf3)}
+.ux-command-copy{display:grid;gap:3px;min-width:0}
+.ux-command-copy strong{font-size:18px;line-height:1.2;letter-spacing:-.015em}
+.ux-command-copy small{font-size:12.5px;line-height:1.35;color:var(--muted)}
+.ux-kicker{font-size:10.5px;text-transform:uppercase;letter-spacing:.08em;font-weight:900;color:#7a5a00}
+.ux-command.all-clear .ux-kicker{color:#157347}
+.ux-command-btn{flex:0 0 auto;min-width:132px}
+
+.metric{position:relative;overflow:hidden}
+.metric::before{content:"";position:absolute;left:0;top:0;bottom:0;width:3px;background:transparent}
+.metric.ux-tone-success::before{background:#12b76a}
+.metric.ux-tone-warning::before{background:#f79009}
+.metric.ux-tone-danger::before{background:#f04438}
+.metric.ux-tone-info::before{background:#2e90fa}
+.metric.ux-tone-success .metric-value{color:#05603a}
+.metric.ux-tone-warning .metric-value{color:#8a4b08}
+.metric.ux-tone-danger .metric-value{color:#9f1f16}
+.metric.ux-tone-info .metric-value{color:#174f91}
+
+.attention-grid .card.clickable{
+  position:relative;padding:14px 14px 11px;border-left-width:4px;box-shadow:0 1px 0 rgba(15,23,42,.02)
+}
+.attention-grid .card.clickable:has(.badge.danger){border-left-color:#f04438;background:#fffafa}
+.attention-grid .card.clickable:has(.badge.warning){border-left-color:#f79009;background:#fffdf8}
+.attention-grid .card.clickable:has(.badge.info){border-left-color:#2e90fa}
+.ux-card-open{margin-top:10px;padding-top:9px;border-top:1px solid rgba(152,162,179,.18);display:flex;align-items:center;justify-content:space-between;color:var(--primary);font-size:12px;font-weight:850}
+.ux-card-open span:last-child{font-size:18px;color:#98a2b3}
+
+.clickable[data-action]:focus-visible,
+.nav-btn:focus-visible,
+button:focus-visible,
+summary:focus-visible{
+  outline:none;box-shadow:var(--ux-focus)
+}
+.list-item.clickable:hover,.card.clickable:hover{border-color:#c2ccd8;background:#fbfcfe}
+
+.ux-required::after{content:" *";color:var(--danger)}
+.ux-required-note{font-size:11px;color:var(--muted);margin-bottom:10px;text-align:right}
+.ux-sticky-submit{z-index:16}
+
+summary{display:flex;align-items:center;justify-content:space-between;gap:10px}
+.ux-summary-chevron{color:#98a2b3;transition:transform .15s ease;flex:0 0 auto}
+details[open] > summary .ux-summary-chevron{transform:rotate(180deg)}
+
+.ux-driver-dock{display:none}
+
+@media(max-width:720px){
+  .section{margin-top:15px}
+  .section-title{margin-bottom:8px}
+  .grid{gap:9px}
+  .card,.metric{border-radius:15px}
+  .metric{padding:13px 13px 12px}
+  .metric-value{font-size:24px}
+  .metric-label{font-size:11.5px}
+  .list{gap:8px}
+  .list-item{padding:12px 13px;min-height:60px}
+  .list-title{font-size:14px}
+  .list-sub{font-size:12px}
+  .badge{font-size:11px;min-height:24px}
+
+  .ux-command{align-items:stretch;flex-direction:column;padding:14px;margin-bottom:12px;gap:11px}
+  .ux-command-copy strong{font-size:17px}
+  .ux-command-btn{width:100%;min-height:48px}
+
+  form .ux-sticky-submit{
+    position:sticky;bottom:calc(72px + env(safe-area-inset-bottom));
+    margin-left:-4px;margin-right:-4px;padding:10px 4px 3px;
+    background:linear-gradient(to bottom,rgba(244,246,248,0),rgba(244,246,248,.96) 30%);
+  }
+  form .ux-sticky-submit .primary-btn{min-height:52px;box-shadow:0 8px 20px rgba(31,58,95,.18)}
+
+  body[data-ux-screen="driver-work"] .app-shell{padding-bottom:154px}
+  body[data-ux-screen="driver-work"] .ux-source-primary{display:none}
+  .ux-driver-dock{
+    display:block;position:fixed;left:10px;right:10px;bottom:calc(72px + env(safe-area-inset-bottom));
+    z-index:34;padding:7px;background:rgba(244,246,248,.93);backdrop-filter:blur(8px);
+    border:1px solid rgba(223,227,232,.9);border-radius:16px;box-shadow:0 10px 30px rgba(15,23,42,.16)
+  }
+  .ux-driver-dock-btn{width:100%;min-height:54px;font-size:16px;border-radius:12px}
+
+  body[data-ux-screen="driver-work"] .hero{padding:17px}
+  body[data-ux-screen="driver-work"] .hero h2{font-size:21px}
+  body[data-ux-screen="driver-work"] .hero .grid{margin-top:14px!important}
+
+  body[data-ux-screen="vehicle"] .hero{padding:17px}
+  body[data-ux-screen="vehicle"] .vc-summary{margin-top:10px}
+  body[data-ux-screen="vehicle"] .vc-cell{min-height:82px}
+}
+
+@media(min-width:900px){
+  .ux-command{padding:17px 18px}
+  .attention-grid{grid-template-columns:repeat(2,minmax(0,1fr))}
+  .attention-grid .card.clickable{min-height:112px}
+}
+
+@media(prefers-reduced-motion:reduce){
+  *,*::before,*::after{scroll-behavior:auto!important;transition:none!important;animation-duration:.001ms!important;animation-iteration-count:1!important}
+}
