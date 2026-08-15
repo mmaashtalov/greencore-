@@ -1,12 +1,12 @@
-const UXRL_VERSION='2026.08.15-role7';
+const UXRL_VERSION='2026.08.15-role8';
 const loaded=new Set();
 const bundles={
   admin:{
     css:[
-      './ux-waybills-list-v2.css?v=20260815-1','./ux-waybill-insight-v1.css?v=20260815-1','./ux-desktop-density-v1.css?v=20260815-1','./ux-vehicle-primary-v1.css?v=20260815-1','./ux-breadcrumb-v1.css?v=20260815-1','./ux-filter-v1.css?v=20260815-1','./ux-responsibility-v1.css?v=20260815-1','./ux-global-search-v1.css?v=20260815-1'
+      './ux-waybills-list-v2.css?v=20260815-1','./ux-waybill-insight-v1.css?v=20260815-1','./ux-desktop-density-v1.css?v=20260815-1','./ux-vehicle-primary-v1.css?v=20260815-1','./ux-breadcrumb-v1.css?v=20260815-1','./ux-filter-v1.css?v=20260815-1','./ux-responsibility-v1.css?v=20260815-1','./ux-global-search-v1.css?v=20260815-1','./ux-recent-work-v1.css?v=20260815-1'
     ],
     js:[
-      './ux-waybills-list-v2.js?v=20260815-1','./ux-waybill-insight-v1.js?v=20260815-1','./ux-vehicle-primary-v1.js?v=20260815-1','./ux-breadcrumb-v1.js?v=20260815-1','./ux-filter-v1.js?v=20260815-1','./ux-responsibility-v1.js?v=20260815-1','./ux-global-search-v1.js?v=20260815-3'
+      './ux-waybills-list-v2.js?v=20260815-1','./ux-waybill-insight-v1.js?v=20260815-1','./ux-vehicle-primary-v1.js?v=20260815-1','./ux-breadcrumb-v1.js?v=20260815-1','./ux-filter-v1.js?v=20260815-1','./ux-responsibility-v1.js?v=20260815-1','./ux-global-search-v1.js?v=20260815-3','./ux-recent-work-v1.js?v=20260815-1'
     ]
   },
   driver:{
