@@ -29,14 +29,14 @@ jobs:
         with:
           node-version: 22
 
-      - name: Validate canonical manifest
+      - name: Validate canonical Fleet bundle
         shell: bash
         run: |
           set -euo pipefail
           cd source/apps/demo/public/fleet-mvp
           python - <<'PY'
           from pathlib import Path
-          import re
+          import json, re
           html = Path('index.html').read_text(encoding='utf-8')
           refs = re.findall(r'(?:src|href)="\.\/([^"?]+)', html)
           missing = [ref for ref in refs if not Path(ref).is_file()]
@@ -45,6 +45,11 @@ jobs:
           duplicates = sorted({ref for ref in refs if refs.count(ref) > 1})
           if duplicates:
               raise SystemExit('Duplicate references: ' + ', '.join(duplicates))
+          manifest = json.loads(Path('manifest.webmanifest').read_text(encoding='utf-8'))
+          for icon in manifest.get('icons', []):
+              src = icon.get('src','').removeprefix('./')
+              if src and not Path(src).is_file():
+                  raise SystemExit('Missing manifest icon: ' + src)
           Path('/tmp/fleet_refs.txt').write_text('\n'.join(refs), encoding='utf-8')
           print('Canonical refs:', ', '.join(refs))
           PY
@@ -53,6 +58,7 @@ jobs:
               *.js) node --check "$file" ;;
             esac
           done < /tmp/fleet_refs.txt
+          node --check sw.js
 
       - name: Checkout public branch
         uses: actions/checkout@v4
@@ -60,17 +66,16 @@ jobs:
           ref: gh-pages
           path: public
 
-      - name: Sync canonical Fleet files
+      - name: Sync complete Fleet bundle
         shell: bash
         run: |
           set -euo pipefail
           src='source/apps/demo/public/fleet-mvp'
           dst='public/fleet-mvp'
           mkdir -p "$dst"
-          cp "$src/index.html" "$dst/index.html"
-          while IFS= read -r file; do
-            cp "$src/$file" "$dst/$file"
-          done < /tmp/fleet_refs.txt
+          find "$src" -maxdepth 1 -type f -print0 | while IFS= read -r -d '' file; do
+            cp "$file" "$dst/$(basename "$file")"
+          done
 
       - name: Commit public Fleet
         working-directory: public
@@ -84,5 +89,5 @@ jobs:
             exit 0
           fi
           git add fleet-mvp
-          git commit -m "feat(fleet-demo): publish canonical Fleet build"
+          git commit -m "feat(fleet-demo): publish canonical Fleet bundle"
           git push origin HEAD:gh-pages
