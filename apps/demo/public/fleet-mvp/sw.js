@@ -1,4 +1,4 @@
-const CACHE='fleet-mvp-shell-20260815-2';
+const CACHE='fleet-mvp-shell-20260815-3';
 const INDEX='./index.html';
 
 async function cacheShell(){
@@ -8,8 +8,8 @@ async function cacheShell(){
   const html=await res.clone().text();
   await cache.put(INDEX,res.clone());
   await cache.put('./',res.clone());
-  const refs=[...html.matchAll(/(?:src|href)="\.\/([^"?]+)(?:\?[^" ]*)?"/g)].map(m=>`./${m[1]}`);
-  const unique=[...new Set(refs.filter(x=>!x.endsWith('sw.js')))];
+  const refs=[...html.matchAll(/(?:src|href)="(\.\/[^\"]+)"/g)].map(m=>m[1]);
+  const unique=[...new Set(refs.filter(x=>!x.startsWith('./sw.js')))];
   await Promise.all(unique.map(async url=>{
     try{const r=await fetch(url,{cache:'reload'});if(r.ok)await cache.put(url,r.clone())}catch{}
   }));
@@ -48,7 +48,8 @@ self.addEventListener('fetch',event=>{
   }
 
   event.respondWith((async()=>{
-    const key=`./${url.pathname.split('/fleet-mvp/')[1]}`;
+    const relative=url.pathname.split('/fleet-mvp/')[1]||'';
+    const key=`./${relative}${url.search}`;
     const cached=await caches.match(key)||await caches.match(req);
     if(cached){
       event.waitUntil(fetch(req).then(async net=>{if(net.ok){const c=await caches.open(CACHE);await c.put(key,net.clone())}}).catch(()=>{}));
