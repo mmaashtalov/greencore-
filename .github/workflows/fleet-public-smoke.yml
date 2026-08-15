@@ -52,20 +52,26 @@ jobs:
               raise SystemExit('Missing role-bundle files: ' + ', '.join(lazy_missing))
 
           forbidden_initial = {
-              'connectivity-patch.js','ux-connectivity-v1.js','offline-home-patch.js',
-              'driver-access-patch.js','driver-attention-patch.js','driver-correction-patch.js',
-              'ux-driver-state-v1.js','ux-driver-form-v1.js','ux-driver-draft-v1.js',
-              'ux-global-search-v1.js','ux-filter-v1.js','ux-breadcrumb-v1.js'
+              'license-validity-patch.js','period-patch.js','period-readiness-patch.js','quality-resolution-patch.js','ux-quality-modal-v1.js',
+              'attention-router-patch.js','review-patch.js','review-details-patch.js','approval-guard-patch.js','state-action-patch.js',
+              'service-workflow-patch.js','service-context-fix.js','maintenance-lifecycle-patch.js','create-form-patch.js','assignment-patch.js',
+              'incident-package-patch.js','fleet-patch.js','fleet-clarity-patch.js','waybills-list-patch.js','statement-print-patch.js','waybill-print-patch.js',
+              'ux-modal-form-v1.js','entity-card-patch.js','vehicle-command-patch.js','vehicle-history-patch.js','trailer-edit-fix.js',
+              'connectivity-patch.js','ux-connectivity-v1.js','offline-home-patch.js','driver-access-patch.js','driver-attention-patch.js','driver-correction-patch.js',
+              'ux-driver-state-v1.js','ux-driver-form-v1.js','ux-driver-draft-v1.js','ux-global-search-v1.js','ux-filter-v1.js','ux-breadcrumb-v1.js'
           }
           leaked = sorted(forbidden_initial.intersection(direct))
           if leaked:
               raise SystemExit('Role-specific JS leaked into initial bundle: ' + ', '.join(leaked))
 
           required_lazy = {
-              'ux-session-boundary-v1.js','connectivity-patch.js','ux-connectivity-v1.js','offline-home-patch.js',
-              'driver-access-patch.js','driver-attention-patch.js','driver-correction-patch.js',
-              'ux-driver-state-v1.js','ux-driver-form-v1.js','ux-driver-draft-v1.js',
-              'ux-global-search-v1.js','ux-filter-v1.js','ux-breadcrumb-v1.js',
+              'ux-session-boundary-v1.js','license-validity-patch.js','period-patch.js','period-readiness-patch.js','quality-resolution-patch.js','ux-quality-modal-v1.js',
+              'attention-router-patch.js','review-patch.js','review-details-patch.js','approval-guard-patch.js','state-action-patch.js',
+              'service-workflow-patch.js','service-context-fix.js','maintenance-lifecycle-patch.js','create-form-patch.js','assignment-patch.js',
+              'incident-package-patch.js','fleet-patch.js','fleet-clarity-patch.js','waybills-list-patch.js','statement-print-patch.js','waybill-print-patch.js',
+              'ux-modal-form-v1.js','entity-card-patch.js','vehicle-command-patch.js','vehicle-history-patch.js','trailer-edit-fix.js',
+              'connectivity-patch.js','ux-connectivity-v1.js','offline-home-patch.js','driver-access-patch.js','driver-attention-patch.js','driver-correction-patch.js',
+              'ux-driver-state-v1.js','ux-driver-form-v1.js','ux-driver-draft-v1.js','ux-global-search-v1.js','ux-filter-v1.js','ux-breadcrumb-v1.js',
               'ux-responsibility-v1.js','ux-recent-work-v1.js'
           }
           absent = sorted(required_lazy.difference(lazy))
