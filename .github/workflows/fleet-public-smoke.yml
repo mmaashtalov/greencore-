@@ -41,6 +41,10 @@ jobs:
             state-action-patch.js \
             create-form-patch.js \
             assignment-patch.js \
+            incident-package-patch.js \
+            fleet-patch.js \
+            waybills-list-patch.js \
+            statement-print-patch.js \
             ux-bridge.js; do
             test -s "$file"
             node --check "$file"
@@ -59,5 +63,8 @@ jobs:
           missing = [ref for ref in refs if not Path(ref).is_file()]
           if missing:
               raise SystemExit('Missing referenced files: ' + ', '.join(missing))
+          duplicates = sorted({ref for ref in refs if refs.count(ref) > 1})
+          if duplicates:
+              raise SystemExit('Duplicate references: ' + ', '.join(duplicates))
           print('References OK:', ', '.join(refs))
           PY
