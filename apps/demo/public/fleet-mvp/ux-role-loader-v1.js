@@ -1,4 +1,4 @@
-const UXRL_VERSION='2026.08.15-role5';
+const UXRL_VERSION='2026.08.15-role6';
 const loaded=new Set();
 const bundles={
   admin:{
@@ -24,10 +24,11 @@ async function loadRole(role){
   if(!bundle||loaded.has(role))return;
   loaded.add(role);
   const started=performance.now();
-  await Promise.all(bundle.css.map(loadCss));
+  const cssReady=Promise.allSettled(bundle.css.map(loadCss));
   for(const src of bundle.js){
     try{await import(src)}catch(err){console.warn('Role UX module failed',src,err)}
   }
+  await cssReady;
   window.dispatchEvent(new CustomEvent('fleet:role-ux-ready',{detail:{role,version:UXRL_VERSION,duration_ms:Math.round(performance.now()-started)}}));
 }
 window.addEventListener('fleet:ui-ready',e=>loadRole(e.detail?.role||document.body.dataset.role));
