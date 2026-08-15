@@ -1,4 +1,4 @@
-const UX_BRIDGE_VERSION='2026.08.15-1';
+const UX_BRIDGE_VERSION='2026.08.15-2';
 
 function humanErrorText(text=''){
   const value=String(text||'').trim();
@@ -6,20 +6,35 @@ function humanErrorText(text=''){
     [/permission denied for function/i,'Недостаточно прав для этого действия. Обновите страницу; если ошибка повторится — обратитесь к администратору.'],
     [/Admin role required/i,'Действие доступно только администратору.'],
     [/Driver role required/i,'Действие доступно только водителю.'],
+    [/Waybill does not belong to current driver|Waybill is not current for driver/i,'Этот путевой лист не относится к текущему водителю. Обновите экран.'],
+    [/Driver license expires before waybill end date/i,'Удостоверение водителя не действует до конца выбранного срока ПЛ.'],
+    [/Driver not found, inactive, or license validity is not configured/i,'Водитель не найден, отключён или не указан срок действия удостоверения.'],
     [/Driver lacks required license category|Категория водительского удостоверения не подходит/i,'Выберите водителя с необходимой категорией допуска.'],
     [/Driver already has active waybill/i,'У выбранного водителя уже есть действующий путевой лист.'],
     [/Vehicle already has active waybill/i,'На выбранную машину уже выдан действующий путевой лист.'],
     [/Trailer already has active waybill/i,'Выбранный прицеп уже используется по другому действующему путевому листу.'],
     [/Vehicle is not available for operation/i,'Эта техника сейчас недоступна для эксплуатации.'],
     [/Trailer is not available for operation/i,'Этот прицеп сейчас недоступен для эксплуатации.'],
+    [/Cannot close waybill while vehicle is moving/i,'Сначала отметьте прибытие. ПЛ нельзя закрыть во время движения.'],
+    [/Closing fuel exceeds tank capacity/i,'Остаток топлива не может быть больше объёма бака. Проверьте показание.'],
+    [/Closing fuel exceeds opening fuel plus registered refuels/i,'Остаток топлива больше доступного по учёту. Проверьте заправки и остаток.'],
+    [/Closing odometer is below last recorded odometer|Odometer cannot decrease/i,'Показание одометра не может быть меньше ранее зафиксированного.'],
+    [/Event is older than already recorded vehicle state|Closing timestamp is older than already recorded vehicle state/i,'В системе уже есть более позднее состояние машины. Обновите экран и повторите действие.'],
+    [/Invalid driver event transition/i,'Последовательность действий изменилась. Обновите экран — система покажет доступное действие.'],
+    [/Refuel quantity exceeds tank capacity/i,'Объём одной заправки не может быть больше объёма бака. Проверьте литры.'],
+    [/Route coverage check failed/i,'Маршрут не покрывает весь пробег ПЛ. Перед утверждением разберите маршрутные данные.'],
+    [/Refuel reconciliation check failed/i,'Сумма заправок не сходится с учётом ПЛ. Перед утверждением разберите заправки.'],
     [/Action is not available now/i,'Это действие сейчас недоступно. Обновите экран.'],
     [/Package data is incomplete/i,'Для формирования пакета не хватает обязательных данных.'],
-    [/Waybills still require review/i,'Сначала завершите проверку путевых листов.'],
-    [/Reporting period boundary data is incomplete/i,'Не подтверждено состояние техники на границе отчётного периода.'],
+    [/Waybills still require review|Reporting period has waybills requiring review/i,'Сначала завершите проверку путевых листов.'],
+    [/Reporting period boundary data is incomplete|Reporting period has unresolved boundary\/segment issues/i,'Не подтверждено состояние техники на границе отчётного периода.'],
+    [/Reporting period has legacy waybill quality issues/i,'В периоде есть ранее утверждённые ПЛ с историческими несоответствиями. Сначала разберите их.'],
+    [/Reporting statement has no printable blocks/i,'Для этого периода не сформированы блоки ведомости.'],
+    [/Reporting period is not under review/i,'Сначала начните сверку отчётного периода.'],
     [/Reporting period has not ended/i,'Отчётный период ещё не завершён.'],
     [/Current fuel norm is not configured/i,'Для машины не задана действующая норма расхода топлива.'],
     [/Authentication required/i,'Сессия завершена. Войдите в систему снова.'],
-    [/Profile not found/i,'Для этой учётной записи не настроен профиль пользователя.']
+    [/Profile not found|Employee profile not found/i,'Для этой учётной записи не настроен профиль пользователя.']
   ];
   const match=rules.find(([re])=>re.test(value));
   return match?match[1]:value;
@@ -34,32 +49,6 @@ function translateVisibleErrors(root=document){
     el.dataset.humanized=UX_BRIDGE_VERSION;
   });
 }
-
-async function openPeriodAttention(periodId){
-  const printNav=document.querySelector('.nav-btn[data-id="print"]');
-  if(!printNav)return;
-  printNav.click();
-  for(let i=0;i<40;i++){
-    await new Promise(r=>setTimeout(r,100));
-    const card=document.querySelector(`[data-action="print-statement"][data-id="${CSS.escape(periodId)}"]`);
-    if(card){card.click();return;}
-  }
-  const host=document.querySelector('.toast-host')||document.body;
-  const el=document.createElement('div');
-  el.className='toast error';
-  el.textContent='Не удалось открыть сверку периода. Обновите страницу.';
-  host.appendChild(el);
-  setTimeout(()=>el.remove(),3600);
-}
-
-document.addEventListener('click',e=>{
-  const card=e.target.closest('[data-action="attention"][data-id^="reporting_period:"]');
-  if(!card)return;
-  e.preventDefault();
-  e.stopImmediatePropagation();
-  const periodId=(card.dataset.id||'').split(':')[1];
-  if(periodId)openPeriodAttention(periodId);
-},true);
 
 let pending=false;
 function scan(){pending=false;translateVisibleErrors();}
