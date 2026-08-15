@@ -1,4 +1,4 @@
-const UXP_VERSION='2026.08.15-ux-polish-2';
+const UXP_VERSION='2026.08.15-ux-polish-3';
 
 function uxText(el){return (el?.textContent||'').replace(/\s+/g,' ').trim()}
 function uxEsc(v=''){return String(v??'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#039;'}[c]))}
@@ -18,8 +18,10 @@ function uxScreen(main){
   if(main.querySelector('[data-ec-action="edit-vehicle"]'))return 'vehicle';
   if(main.querySelector('[data-action="attention"]')&&main.querySelector('[data-action="issue-waybill"]'))return 'home';
   if(title==='Техника')return 'fleet';
+  if(title==='Водители')return 'drivers';
   if(title==='ТО и ремонт')return 'service';
   if(title==='Печать')return 'print';
+  if(title==='Проверка путевых листов')return 'review-queue';
   if(title.startsWith('ПЛ '))return 'waybill';
   return 'generic';
 }
@@ -130,6 +132,54 @@ function uxDetails(main){
   });
 }
 
+function uxSearchSpec(screen){
+  return ({
+    fleet:{selector:'[data-action="open-vehicle"]',placeholder:'Машина, номер, статус или ПЛ'},
+    drivers:{selector:'[data-action="open-driver"]',placeholder:'ФИО, категория или машина'},
+    service:{selector:'[data-action="service-item"]',placeholder:'Машина, ТО, ремонт или неисправность'},
+    print:{selector:'[data-action="print-waybill"], [data-action="print-statement"]',placeholder:'Номер ПЛ, машина, водитель или период'},
+    'review-queue':{selector:'[data-action="open-waybill-review"]',placeholder:'Номер ПЛ, машина или водитель'}
+  })[screen]||null;
+}
+
+function uxApplySearch(main,query=''){
+  const selector=main.dataset.uxSearchSelector;
+  if(!selector)return;
+  const q=String(query||'').trim().toLocaleLowerCase('ru-RU');
+  const items=[...main.querySelectorAll(selector)].filter(el=>!el.closest('.ux-list-tools'));
+  let visible=0;
+  items.forEach(el=>{
+    const match=!q||uxText(el).toLocaleLowerCase('ru-RU').includes(q);
+    el.hidden=!match;
+    if(match)visible++;
+  });
+  const count=main.querySelector('.ux-search-count');
+  if(count)count.textContent=q?`${visible} из ${items.length}`:`${items.length}`;
+  let empty=main.querySelector('.ux-search-empty');
+  if(q&&visible===0){
+    if(!empty){empty=document.createElement('div');empty.className='empty ux-search-empty';empty.textContent='Ничего не найдено. Измените запрос.';main.appendChild(empty)}
+    empty.hidden=false;
+  }else if(empty)empty.hidden=true;
+}
+
+function uxListSearch(main,screen){
+  const spec=uxSearchSpec(screen);
+  if(!spec||main.querySelector('.ux-list-tools'))return;
+  const items=main.querySelectorAll(spec.selector);
+  if(items.length<4)return;
+  const head=main.querySelector('.page-head');
+  if(!head)return;
+  main.dataset.uxSearchSelector=spec.selector;
+  const tools=document.createElement('div');
+  tools.className='ux-list-tools';
+  tools.innerHTML=`<label class="ux-search"><span aria-hidden="true">⌕</span><input type="search" placeholder="${uxEsc(spec.placeholder)}" aria-label="Поиск по списку" autocomplete="off"><button type="button" class="ux-search-clear" aria-label="Очистить поиск" hidden>×</button></label><span class="ux-search-count">${items.length}</span>`;
+  head.insertAdjacentElement('afterend',tools);
+  const input=tools.querySelector('input');
+  const clear=tools.querySelector('.ux-search-clear');
+  input.addEventListener('input',()=>{clear.hidden=!input.value;uxApplySearch(main,input.value)});
+  clear.addEventListener('click',()=>{input.value='';clear.hidden=true;uxApplySearch(main,'');input.focus()});
+}
+
 function uxDecorate(){
   const main=document.querySelector('.main');
   if(!main)return;
@@ -142,6 +192,7 @@ function uxDecorate(){
   if(screen==='home')uxHome(main);
   if(screen==='driver-work')uxDriverDock(main);
   uxForms(main);
+  uxListSearch(main,screen);
 }
 
 document.addEventListener('click',e=>{
