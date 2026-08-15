@@ -4,9 +4,7 @@ on:
   push:
     branches: [main]
     paths:
-      - 'apps/demo/public/fleet-mvp/fleet-patch.*'
-      - 'apps/demo/public/fleet-mvp/waybills-list-patch.*'
-      - 'apps/demo/public/fleet-mvp/statement-print-patch.*'
+      - 'apps/demo/public/fleet-mvp/**'
       - '.github/workflows/fleet-enhancements-publish.yml'
   workflow_dispatch:
 
@@ -31,17 +29,30 @@ jobs:
         with:
           node-version: 22
 
-      - name: Validate enhancement JavaScript
+      - name: Validate canonical manifest
         shell: bash
         run: |
           set -euo pipefail
           cd source/apps/demo/public/fleet-mvp
-          node --check fleet-patch.js
-          node --check waybills-list-patch.js
-          node --check statement-print-patch.js
-          test -s fleet-patch.css
-          test -s waybills-list-patch.css
-          test -s statement-print-patch.css
+          python - <<'PY'
+          from pathlib import Path
+          import re
+          html = Path('index.html').read_text(encoding='utf-8')
+          refs = re.findall(r'(?:src|href)="\.\/([^"?]+)', html)
+          missing = [ref for ref in refs if not Path(ref).is_file()]
+          if missing:
+              raise SystemExit('Missing referenced files: ' + ', '.join(missing))
+          duplicates = sorted({ref for ref in refs if refs.count(ref) > 1})
+          if duplicates:
+              raise SystemExit('Duplicate references: ' + ', '.join(duplicates))
+          Path('/tmp/fleet_refs.txt').write_text('\n'.join(refs), encoding='utf-8')
+          print('Canonical refs:', ', '.join(refs))
+          PY
+          while IFS= read -r file; do
+            case "$file" in
+              *.js) node --check "$file" ;;
+            esac
+          done < /tmp/fleet_refs.txt
 
       - name: Checkout public branch
         uses: actions/checkout@v4
@@ -49,47 +60,29 @@ jobs:
           ref: gh-pages
           path: public
 
-      - name: Activate enhancement modules
+      - name: Sync canonical Fleet files
         shell: bash
         run: |
           set -euo pipefail
-          python - <<'PY'
-          from pathlib import Path
-          p = Path('public/fleet-mvp/index.html')
-          html = p.read_text(encoding='utf-8')
-          css = [
-              '<link rel="stylesheet" href="./fleet-patch.css?v=20260815-1" />',
-              '<link rel="stylesheet" href="./waybills-list-patch.css?v=20260815-1" />',
-          ]
-          js = [
-              '<script type="module" src="./fleet-patch.js?v=20260815-1"></script>',
-              '<script type="module" src="./waybills-list-patch.js?v=20260815-1"></script>',
-              '<script type="module" src="./statement-print-patch.js?v=20260815-1"></script>',
-          ]
-          for tag in css:
-              if tag not in html:
-                  html = html.replace('</head>', f'  {tag}\n</head>')
-          anchor = '<script type="module" src="./ux-bridge.js?v=20260815-1"></script>'
-          for tag in js:
-              if tag not in html:
-                  if anchor in html:
-                      html = html.replace(anchor, f'{tag}\n  {anchor}')
-                  else:
-                      html = html.replace('</body>', f'  {tag}\n</body>')
-          p.write_text(html, encoding='utf-8')
-          PY
+          src='source/apps/demo/public/fleet-mvp'
+          dst='public/fleet-mvp'
+          mkdir -p "$dst"
+          cp "$src/index.html" "$dst/index.html"
+          while IFS= read -r file; do
+            cp "$src/$file" "$dst/$file"
+          done < /tmp/fleet_refs.txt
 
-      - name: Commit public index
+      - name: Commit public Fleet
         working-directory: public
         shell: bash
         run: |
           set -euo pipefail
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
-          if git diff --quiet -- fleet-mvp/index.html; then
-            echo "Fleet enhancements already active"
+          if git diff --quiet -- fleet-mvp; then
+            echo "Fleet public files already current"
             exit 0
           fi
-          git add fleet-mvp/index.html
-          git commit -m "feat(fleet-demo): activate fleet enhancements"
+          git add fleet-mvp
+          git commit -m "feat(fleet-demo): publish canonical Fleet build"
           git push origin HEAD:gh-pages
