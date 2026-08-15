@@ -53,6 +53,7 @@ jobs:
 
           forbidden_initial = {
               'connectivity-patch.js','ux-connectivity-v1.js','offline-home-patch.js',
+              'driver-access-patch.js','driver-attention-patch.js','driver-correction-patch.js',
               'ux-driver-state-v1.js','ux-driver-form-v1.js','ux-driver-draft-v1.js',
               'ux-global-search-v1.js','ux-filter-v1.js','ux-breadcrumb-v1.js'
           }
@@ -62,6 +63,7 @@ jobs:
 
           required_lazy = {
               'ux-session-boundary-v1.js','connectivity-patch.js','ux-connectivity-v1.js','offline-home-patch.js',
+              'driver-access-patch.js','driver-attention-patch.js','driver-correction-patch.js',
               'ux-driver-state-v1.js','ux-driver-form-v1.js','ux-driver-draft-v1.js',
               'ux-global-search-v1.js','ux-filter-v1.js','ux-breadcrumb-v1.js',
               'ux-responsibility-v1.js','ux-recent-work-v1.js'
