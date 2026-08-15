@@ -51,7 +51,7 @@ async function uxiFetch(path,options={},retry=true){
 function uxiRole(){return document.body.dataset.role||''}
 function uxiAdminFilter(){return uxiRole()==='admin'?'&employee_id=is.null':''}
 function uxiEsc(value=''){
-  return String(value??'').replace(/[&<>"']/g,char=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot',"'":'&#039;'}[char]));
+  return String(value??'').replace(/[&<>"']/g,char=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#039;'}[char]));
 }
 function uxiDate(value){
   const date=new Date(value);
