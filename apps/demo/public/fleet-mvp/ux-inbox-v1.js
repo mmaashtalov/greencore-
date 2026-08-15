@@ -1,4 +1,4 @@
-const UXI_VERSION='2026.08.16-inbox2';
+const UXI_VERSION='2026.08.16-inbox3';
 const UXI_CFG={
   url:'https://tikjmiyrhkcjrxjylmqb.supabase.co',
   key:'sb_publishable_clr5P9USk7b63MajJmmr9A_Iz0wi_0F',
@@ -51,7 +51,7 @@ async function uxiFetch(path,options={},retry=true){
 function uxiRole(){return document.body.dataset.role||''}
 function uxiAdminFilter(){return uxiRole()==='admin'?'&employee_id=is.null':''}
 function uxiEsc(value=''){
-  return String(value??'').replace(/[&<>"']/g,char=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#039;'}[char]));
+  return String(value??'').replace(/[&<>"']/g,char=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot',"'":'&#039;'}[char]));
 }
 function uxiDate(value){
   const date=new Date(value);
@@ -219,8 +219,10 @@ function uxiNavigate(target){
 async function uxiGo(target,id,button){
   if(button?.disabled)return;
   if(button)button.disabled=true;
-  try{await uxiPatchRead(id)}catch{}
-  uxiSetBadge(Math.max(0,Number(document.querySelector('[data-uxi-open] .uxi-badge')?.textContent||1)-1));
+  try{
+    await uxiPatchRead(id);
+    uxiSetBadge(await uxiUnreadCount());
+  }catch{}
   uxiClose();
   queueMicrotask(()=>uxiNavigate(target));
 }
