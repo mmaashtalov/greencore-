@@ -1,4 +1,4 @@
-const CACHE='fleet-mvp-shell-20260815-8';
+const CACHE='fleet-mvp-shell-20260815-9';
 const INDEX='./index.html';
 
 async function cacheUrl(cache,url){
