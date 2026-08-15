@@ -1,4 +1,4 @@
-const UXD_VERSION='2026.08.15-dialog1';
+const UXD_VERSION='2026.08.15-dialog2';
 const uxdBypass=new WeakSet();
 let uxdResolve=null,uxdLastFocus=null;
 
@@ -20,10 +20,17 @@ function uxdDialog({title,body='',confirmLabel='Продолжить',danger=fal
     root.addEventListener('keydown',e=>{if(e.key==='Escape'){e.preventDefault();uxdClose(null)}if(e.key==='Tab'){const fs=[...root.querySelectorAll('button,select,textarea,input')].filter(x=>!x.disabled);if(!fs.length)return;const first=fs[0],last=fs[fs.length-1];if(e.shiftKey&&document.activeElement===first){e.preventDefault();last.focus()}else if(!e.shiftKey&&document.activeElement===last){e.preventDefault();first.focus()}}});
   })
 }
+window.fleetUxDialog=uxdDialog;
 function uxdReplayClick(el,{confirm=true,prompts=[]}={}){const oldConfirm=window.confirm,oldPrompt=window.prompt;let i=0;window.confirm=()=>confirm;window.prompt=()=>prompts[i++]??null;try{uxdBypass.add(el);el.click()}finally{window.confirm=oldConfirm;window.prompt=oldPrompt}}
 function uxdReplaySubmit(form){const oldConfirm=window.confirm;window.confirm=()=>true;try{form.dataset.uxdBypass='1';form.requestSubmit()}finally{window.confirm=oldConfirm}}
+function uxdDirtyForm(){return [...document.querySelectorAll('.main form[data-uxd-dirty="1"]')].find(f=>f.isConnected)||null}
+function uxdClearDirty(form){if(form)delete form.dataset.uxdDirty}
 
 async function uxdInterceptClick(e){const el=e.target.closest('[data-action]');if(!el)return;if(uxdBypass.has(el)){uxdBypass.delete(el);return}const a=el.dataset.action;
+  if(['back','main-nav','logout','refresh'].includes(a)){
+    const dirty=uxdDirtyForm();
+    if(dirty){e.preventDefault();e.stopImmediatePropagation();const ok=await uxdDialog({title:'Изменения не сохранены',body:'Вы уже начали заполнять форму. Если уйти сейчас, введённые данные будут потеряны.',confirmLabel:'Уйти без сохранения',danger:true});if(ok){uxdClearDirty(dirty);uxdReplayClick(el)}return}
+  }
   if(a==='approve-waybill'){
     e.preventDefault();e.stopImmediatePropagation();const ok=await uxdDialog({title:'Утвердить путевой лист?',body:'Конечные пробег и остаток топлива станут подтверждённым состоянием машины.',confirmLabel:'Утвердить'});if(ok)uxdReplayClick(el);return;
   }
@@ -38,5 +45,9 @@ async function uxdInterceptClick(e){const el=e.target.closest('[data-action]');i
   }
 }
 document.addEventListener('click',uxdInterceptClick,true);
+
+document.addEventListener('input',e=>{const form=e.target?.closest?.('.main form');if(form&&e.isTrusted)form.dataset.uxdDirty='1'},true);
+document.addEventListener('change',e=>{const form=e.target?.closest?.('.main form');if(form&&e.isTrusted)form.dataset.uxdDirty='1'},true);
+window.addEventListener('beforeunload',e=>{if(!uxdDirtyForm())return;e.preventDefault();e.returnValue=''});
 
 document.addEventListener('submit',async e=>{const form=e.target;if(!(form instanceof HTMLFormElement)||form.id!=='maintenanceCompleteForm')return;if(form.dataset.uxdBypass==='1'){delete form.dataset.uxdBypass;return}e.preventDefault();e.stopImmediatePropagation();const ok=await uxdDialog({title:'Записать выполненное ТО?',body:'Запись попадёт в историю обслуживания и обновит расчёт следующего ТО.',confirmLabel:'Записать ТО'});if(ok)uxdReplaySubmit(form)},true);
