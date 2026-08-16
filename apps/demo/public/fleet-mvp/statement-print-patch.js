@@ -1,8 +1,8 @@
-const SP_CFG={url:'https://tikjmiyrhkcjrxjylmqb.supabase.co',key:'sb_publishable_clr5P9USk7b63MajJmmr9A_Iz0wi_0F',version:'2026.08.16-print2'};
+const SP_CFG={url:'https://tikjmiyrhkcjrxjylmqb.supabase.co',key:'sb_publishable_clr5P9USk7b63MajJmmr9A_Iz0wi_0F',version:'2026.08.16-print3'};
 const SP_SESSION_KEY='fleet_mvp_session_v2';
 function spSession(){try{return JSON.parse(localStorage.getItem(SP_SESSION_KEY)||'null')}catch{return null}}
 async function spRpc(name,params={}){const s=spSession();if(!s?.access_token)throw new Error('Нужно войти в систему.');const r=await fetch(`${SP_CFG.url}/rest/v1/rpc/${encodeURIComponent(name)}`,{method:'POST',headers:{apikey:SP_CFG.key,Authorization:`Bearer ${s.access_token}`,'Content-Type':'application/json'},body:JSON.stringify(params)});if(!r.ok){const x=await r.json().catch(()=>({}));throw new Error(x.message||x.error||`HTTP ${r.status}`)}const t=await r.text();return t?JSON.parse(t):null}
-function sph(v=''){return String(v??'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot',"'":'&#039;'}[c]))}
+function sph(v=''){return String(v??'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#039;'}[c]))}
 function spn(v,d=1){if(v===null||v===undefined||v==='')return'';const n=Number(v);return Number.isFinite(n)?n.toLocaleString('ru-RU',{maximumFractionDigits:d}):sph(v)}
 function spdate(v){if(!v)return'';const d=new Date(v);return Number.isNaN(d.getTime())?'':new Intl.DateTimeFormat('ru-RU',{day:'2-digit',month:'2-digit',year:'numeric'}).format(d)}
 function slotHead(slotNo){return `<th colspan="6" class="slot-title">Путевой лист ${slotNo}</th>`}
