@@ -1,4 +1,4 @@
-const DLR_CFG={url:'https://tikjmiyrhkcjrxjylmqb.supabase.co',key:'sb_publishable_clr5P9USk7b63MajJmmr9A_Iz0wi_0F',version:'2026.08.16-live1'};
+const DLR_CFG={url:'https://tikjmiyrhkcjrxjylmqb.supabase.co',key:'sb_publishable_clr5P9USk7b63MajJmmr9A_Iz0wi_0F',version:'2026.08.16-live2'};
 const DLR_SESSION='fleet_mvp_session_v2';
 let dlrTimer=null,dlrBusy=false,dlrWatching=false;
 function dlrSession(){try{return JSON.parse(localStorage.getItem(DLR_SESSION)||'null')}catch{return null}}
@@ -7,7 +7,8 @@ async function dlrRefreshSession(){const s=dlrSession();if(!s?.refresh_token)thr
 async function dlrRpc(name,params={},retry=true){let s=dlrSession();if(!s?.access_token)return null;let r=await fetch(`${DLR_CFG.url}/rest/v1/rpc/${encodeURIComponent(name)}`,{method:'POST',headers:{apikey:DLR_CFG.key,Authorization:`Bearer ${s.access_token}`,'Content-Type':'application/json'},body:JSON.stringify(params)});if(r.status===401&&retry){s=await dlrRefreshSession();r=await fetch(`${DLR_CFG.url}/rest/v1/rpc/${encodeURIComponent(name)}`,{method:'POST',headers:{apikey:DLR_CFG.key,Authorization:`Bearer ${s.access_token}`,'Content-Type':'application/json'},body:JSON.stringify(params)})}if(!r.ok)return null;const t=await r.text();return t?JSON.parse(t):null}
 function dlrOnDriverWork(){return document.body.dataset.role==='driver'&&document.querySelector('.page-title')?.textContent?.trim()==='Моя машина'}
 function dlrRefreshView(){const b=document.createElement('button');b.type='button';b.hidden=true;b.dataset.action='refresh';document.body.appendChild(b);b.click();queueMicrotask(()=>b.remove())}
-function dlrShouldWatch(home){return !!home&&!home.waybill&&home.primary_action?.id==='none'&&['В эксплуатации','Резерв'].includes(home.vehicle?.status_label)}
+function dlrVehicleBlocked(home){return (home?.attention?.items||[]).some(item=>item?.id==='vehicle_state')}
+function dlrShouldWatch(home){return !!home?.vehicle&&!home.waybill&&home.primary_action?.id==='none'&&!dlrVehicleBlocked(home)}
 async function dlrCheck(){if(dlrBusy||document.visibilityState!=='visible'||!dlrOnDriverWork())return;dlrBusy=true;try{const home=await dlrRpc('get_driver_home');if(!home)return;if(home.waybill||home.primary_action?.id!=='none'){dlrStop();dlrRefreshView();return}if(!dlrShouldWatch(home))dlrStop()}finally{dlrBusy=false}}
 function dlrStart(){if(dlrTimer||!dlrWatching)return;dlrTimer=setInterval(dlrCheck,20000)}
 function dlrStop(){if(dlrTimer)clearInterval(dlrTimer);dlrTimer=null;dlrWatching=false}
