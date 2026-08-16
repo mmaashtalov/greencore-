@@ -1,4 +1,4 @@
-const UXD_VERSION='2026.08.16-dialog4';
+const UXD_VERSION='2026.08.16-dialog5';
 const uxdBypass=new WeakSet();
 let uxdResolve=null,uxdLastFocus=null;
 
@@ -21,6 +21,7 @@ function uxdDialog({title,body='',confirmLabel='Продолжить',danger=fal
   })
 }
 window.fleetUxDialog=uxdDialog;
+window.fleetUxPrompt=async function({title='Введите значение',body='',label='Комментарий',placeholder='',value='',confirmLabel='Сохранить',danger=false,maxLength=500}={}){const v=await uxdDialog({title,body,confirmLabel,danger,fields:[{type:'textarea',name:'value',label,placeholder,value}]});if(!v)return null;const text=String(v.value||'').trim();return text?text.slice(0,Math.max(1,Number(maxLength)||500)):null};
 function uxdReplayClick(el,{confirm=true,prompts=[]}={}){const oldConfirm=window.confirm,oldPrompt=window.prompt;let i=0;window.confirm=()=>confirm;window.prompt=()=>prompts[i++]??null;try{uxdBypass.add(el);el.click()}finally{window.confirm=oldConfirm;window.prompt=oldPrompt}}
 function uxdReplaySubmit(form){const oldConfirm=window.confirm;window.confirm=()=>true;try{form.dataset.uxdBypass='1';form.requestSubmit()}finally{window.confirm=oldConfirm}}
 function uxdDirtyForm(){return [...document.querySelectorAll('.main form[data-uxd-dirty="1"]')].find(f=>f.isConnected)||null}
