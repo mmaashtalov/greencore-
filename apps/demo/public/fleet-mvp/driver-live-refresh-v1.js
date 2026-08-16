@@ -1,6 +1,6 @@
-const DLR_CFG={url:'https://tikjmiyrhkcjrxjylmqb.supabase.co',key:'sb_publishable_clr5P9USk7b63MajJmmr9A_Iz0wi_0F',version:'2026.08.16-live2'};
+const DLR_CFG={url:'https://tikjmiyrhkcjrxjylmqb.supabase.co',key:'sb_publishable_clr5P9USk7b63MajJmmr9A_Iz0wi_0F',version:'2026.08.16-live3'};
 const DLR_SESSION='fleet_mvp_session_v2';
-let dlrTimer=null,dlrBusy=false,dlrWatching=false;
+let dlrTimer=null,dlrBusy=false,dlrWatching=false,dlrMain=null,dlrPending=false;
 function dlrSession(){try{return JSON.parse(localStorage.getItem(DLR_SESSION)||'null')}catch{return null}}
 function dlrSave(s){if(s)localStorage.setItem(DLR_SESSION,JSON.stringify(s))}
 async function dlrRefreshSession(){const s=dlrSession();if(!s?.refresh_token)throw new Error('Сессия истекла.');const r=await fetch(`${DLR_CFG.url}/auth/v1/token?grant_type=refresh_token`,{method:'POST',headers:{apikey:DLR_CFG.key,'Content-Type':'application/json'},body:JSON.stringify({refresh_token:s.refresh_token})});const d=await r.json().catch(()=>({}));if(!r.ok||!d.access_token)throw new Error(d.message||'Сессия истекла.');d.obtained_at=Date.now();dlrSave(d);return d}
@@ -13,5 +13,5 @@ async function dlrCheck(){if(dlrBusy||document.visibilityState!=='visible'||!dlr
 function dlrStart(){if(dlrTimer||!dlrWatching)return;dlrTimer=setInterval(dlrCheck,20000)}
 function dlrStop(){if(dlrTimer)clearInterval(dlrTimer);dlrTimer=null;dlrWatching=false}
 async function dlrEvaluate(){if(!dlrOnDriverWork()){dlrStop();return}if(dlrBusy)return;dlrBusy=true;try{const home=await dlrRpc('get_driver_home');if(!home)return;dlrWatching=dlrShouldWatch(home);if(dlrWatching)dlrStart();else dlrStop()}finally{dlrBusy=false}}
-let dlrPending=false;function dlrSchedule(){if(dlrPending)return;dlrPending=true;queueMicrotask(()=>{dlrPending=false;dlrEvaluate()})}
-new MutationObserver(dlrSchedule).observe(document.documentElement,{childList:true,subtree:true});document.addEventListener('visibilitychange',()=>{if(document.visibilityState==='visible'){if(dlrWatching)dlrCheck();else dlrEvaluate()}});window.addEventListener('online',()=>{if(dlrWatching)dlrCheck();else dlrEvaluate()});window.addEventListener('fleet:role-ux-ready',e=>{if(e.detail?.role==='driver')dlrEvaluate()});dlrSchedule();
+function dlrSchedule(){if(dlrPending)return;dlrPending=true;queueMicrotask(()=>{dlrPending=false;const main=document.querySelector('.main');if(main===dlrMain)return;dlrMain=main;if(!dlrOnDriverWork()){dlrStop();return}dlrEvaluate()})}
+new MutationObserver(dlrSchedule).observe(document.documentElement,{childList:true,subtree:true});document.addEventListener('visibilitychange',()=>{if(document.visibilityState==='visible'){if(dlrWatching)dlrCheck();else if(dlrOnDriverWork())dlrEvaluate()}});window.addEventListener('online',()=>{if(dlrWatching)dlrCheck();else if(dlrOnDriverWork())dlrEvaluate()});window.addEventListener('fleet:role-ux-ready',e=>{if(e.detail?.role==='driver'){dlrMain=document.querySelector('.main');dlrEvaluate()}});dlrSchedule();
