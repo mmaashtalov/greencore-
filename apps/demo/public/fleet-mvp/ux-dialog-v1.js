@@ -1,4 +1,4 @@
-const UXD_VERSION='2026.08.16-dialog5';
+const UXD_VERSION='2026.08.16-dialog6';
 const uxdBypass=new WeakSet();
 let uxdResolve=null,uxdLastFocus=null;
 
@@ -51,4 +51,4 @@ document.addEventListener('input',e=>{const form=e.target?.closest?.('.main form
 document.addEventListener('change',e=>{const form=e.target?.closest?.('.main form');if(form&&e.isTrusted)form.dataset.uxdDirty='1'},true);
 window.addEventListener('beforeunload',e=>{if(!uxdDirtyForm())return;e.preventDefault();e.returnValue=''});
 
-document.addEventListener('submit',async e=>{const form=e.target;if(!(form instanceof HTMLFormElement)||form.id!=='maintenanceCompleteForm')return;if(form.dataset.uxdBypass==='1'){delete form.dataset.uxdBypass;return}e.preventDefault();e.stopImmediatePropagation();const ok=await uxdDialog({title:'Записать выполненное ТО?',body:'Запись попадёт в историю обслуживания и обновит расчёт следующего ТО.',confirmLabel:'Записать ТО'});if(ok)uxdReplaySubmit(form)},true);
+document.addEventListener('submit',async e=>{const form=e.target;if(!(form instanceof HTMLFormElement)||form.id!=='maintenanceCompleteForm')return;if(form.dataset.uxdBypass==='1'){delete form.dataset.uxdBypass;return}e.preventDefault();e.stopImmediatePropagation();const baseline=form.dataset.maintenanceMode==='baseline';const ok=await uxdDialog(baseline?{title:'Сохранить исходное ТО?',body:'Будут записаны фактические дата и пробег последнего подтверждённого обслуживания. От этой точки система рассчитает следующий срок.',confirmLabel:'Сохранить исходное ТО'}:{title:'Записать выполненное ТО?',body:'Запись попадёт в историю обслуживания и обновит расчёт следующего ТО.',confirmLabel:'Записать ТО'});if(ok)uxdReplaySubmit(form)},true);
