@@ -1,4 +1,4 @@
-const UXR_VERSION='2026.08.15-runtime2';
+const UXR_VERSION='2026.08.18-runtime3';
 const app=document.getElementById('app');
 let lastSignature='';
 
@@ -31,15 +31,21 @@ function detectView(){
   if(main.querySelector('[data-ec-action="edit-vehicle"]'))return 'vehicle';
   return title||'screen';
 }
+function transientUi(){
+  return Boolean(document.querySelector('#app > .splash, .main .inline-loading, .main .uxl-loading'));
+}
 function publish(){
-  const role=detectRole(),view=detectView();
+  const loading=transientUi();
+  const role=loading?'':detectRole();
+  const view=loading?'loading':detectView();
   document.body.dataset.role=role;
   document.body.dataset.view=view;
-  const sig=`${role}|${view}|${document.querySelector('.main')?.childElementCount||0}`;
+  const sig=`${role}|${view}|${document.querySelector('.main')?.childElementCount||0}|${loading?'1':'0'}`;
   if(sig===lastSignature)return;
   lastSignature=sig;
+  if(loading)return;
   window.dispatchEvent(new CustomEvent('fleet:ui-ready',{detail:{role,view,version:UXR_VERSION}}));
 }
-if(app){new MutationObserver(()=>queueMicrotask(publish)).observe(app,{childList:true});}
+if(app){new MutationObserver(()=>queueMicrotask(publish)).observe(app,{childList:true,subtree:false});}
 window.addEventListener('pageshow',publish);
 queueMicrotask(publish);
