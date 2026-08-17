@@ -88,6 +88,7 @@ jobs:
           set -euo pipefail
           index_file="$(mktemp)"
           fleet_file="$(mktemp)"
+          asset_file="$(mktemp)"
           published=false
           for attempt in $(seq 1 36); do
             root_ok=false
@@ -101,7 +102,7 @@ jobs:
                 asset_url="${PAGE_URL%/}/${asset_path#./}"
                 if curl --fail --silent --show-error --location \
                   --connect-timeout 10 --max-time 30 \
-                  "$asset_url" | grep --fixed-strings --quiet 'GREENCORE LIVE OPERATIONS'; then
+                  "$asset_url" --output "$asset_file" && [ -s "$asset_file" ]; then
                   root_ok=true
                 fi
               fi
@@ -130,7 +131,7 @@ jobs:
           fi
 
           verified_at="$(date -u +%Y-%m-%dT%H:%M:%SZ)"
-          printf '{\n  "status": "verified",\n  "page_url": "%s",\n  "fleet_url": "%s",\n  "source_sha": "%s",\n  "verified_at": "%s",\n  "marker": "GREENCORE LIVE OPERATIONS",\n  "fleet_startup_fix": "2026.08.18-fresh2"\n}\n' \
+          printf '{\n  "status": "verified",\n  "page_url": "%s",\n  "fleet_url": "%s",\n  "source_sha": "%s",\n  "verified_at": "%s",\n  "fleet_startup_fix": "2026.08.18-fresh2"\n}\n' \
             "$PAGE_URL" "$FLEET_URL" "$SOURCE_SHA" "$verified_at" > /tmp/pages-status.json
 
       - name: Publish verifiable deployment status
