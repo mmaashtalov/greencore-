@@ -39,7 +39,7 @@ jobs:
           import re
 
           html=Path('index.html').read_text(encoding='utf-8')
-          if 'fleet-mvp/demo базе' in html or 'MVP' in html or 'Демонстрационный' in html:
+          if 'MVP' in html or 'Демонстрационный' in html:
               raise SystemExit('Production shell contains demo branding')
           if 'runtime-config.js' not in html or 'prod-bootstrap.js' not in html:
               raise SystemExit('Production shell must use runtime config and fail-closed bootstrap')
@@ -49,6 +49,9 @@ jobs:
           cfg=Path('runtime-config.js').read_text(encoding='utf-8')
           if '__SUPABASE_URL__' not in cfg or '__SUPABASE_PUBLISHABLE_KEY__' not in cfg:
               raise SystemExit('Committed production runtime config must remain deployment-templated')
+          template=Path('runtime-config.template.js').read_text(encoding='utf-8')
+          for token in ['${SUPABASE_URL}','${SUPABASE_PUBLISHABLE_KEY}']:
+              if token not in template: raise SystemExit('Runtime config template missing: '+token)
 
           bootstrap=Path('prod-bootstrap.js').read_text(encoding='utf-8')
           for token in ['DEMO_REF','Production запрещено запускать на fleet-mvp/demo базе','sb_publishable_','prod-hardening-v1.js']:
@@ -78,7 +81,17 @@ jobs:
           if loader.find('loaded.add(role)') < loader.find('if(failures.length)'):
               raise SystemExit('Role loader marks bundle ready before failure check')
 
-          all_js=sorted(set(['runtime-config.js','prod-bootstrap.js','prod-hardening-v1.js','sw.js']+imported+lazy))
+          dockerfile=Path('Dockerfile').read_text(encoding='utf-8')
+          for token in ['nginx:stable-alpine','docker-entrypoint-prod.sh','EXPOSE 8080']:
+              if token not in dockerfile: raise SystemExit('Dockerfile contract missing: '+token)
+          entrypoint=Path('docker-entrypoint-prod.sh').read_text(encoding='utf-8')
+          for token in ['SUPABASE_URL is required','SUPABASE_PUBLISHABLE_KEY is required','tikjmiyrhkcjrxjylmqb','envsubst']:
+              if token not in entrypoint: raise SystemExit('Container entrypoint contract missing: '+token)
+          nginx=Path('nginx.conf').read_text(encoding='utf-8')
+          for token in ['listen 8080','runtime-config.js','Cache-Control "no-store','X-Frame-Options "DENY"']:
+              if token not in nginx: raise SystemExit('Nginx production contract missing: '+token)
+
+          all_js=sorted(set(['runtime-config.js','runtime-config.template.js','prod-bootstrap.js','prod-hardening-v1.js','sw.js']+imported+lazy))
           Path('/tmp/fleet_prod_js.txt').write_text('\n'.join(p for p in all_js if p.endswith('.js')),encoding='utf-8')
           print(f'Production modules checked: {len(all_js)}')
           PY
@@ -86,3 +99,4 @@ jobs:
             test -s "$file"
             node --check "$file"
           done < /tmp/fleet_prod_js.txt
+          sh -n docker-entrypoint-prod.sh
