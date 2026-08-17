@@ -2,7 +2,13 @@ name: Fleet Public Smoke
 
 on:
   push:
-    branches: [main]
+    branches:
+      - main
+      - 'agent/**'
+    paths:
+      - 'apps/demo/public/fleet-mvp/**'
+      - '.github/workflows/fleet-public-smoke.yml'
+  pull_request:
     paths:
       - 'apps/demo/public/fleet-mvp/**'
       - '.github/workflows/fleet-public-smoke.yml'
@@ -12,7 +18,7 @@ permissions:
   contents: read
 
 concurrency:
-  group: fleet-public-smoke
+  group: fleet-public-smoke-${{ github.ref }}
   cancel-in-progress: true
 
 jobs:
@@ -58,7 +64,8 @@ jobs:
               'incident-package-patch.js','fleet-patch.js','fleet-clarity-patch.js','waybills-list-patch.js','statement-print-patch.js','waybill-print-patch.js',
               'ux-modal-form-v1.js','entity-card-patch.js','vehicle-command-patch.js','vehicle-history-patch.js','trailer-edit-fix.js',
               'connectivity-patch.js','ux-connectivity-v1.js','offline-home-patch.js','driver-access-patch.js','driver-attention-patch.js','driver-correction-patch.js',
-              'ux-driver-state-v1.js','ux-driver-form-v1.js','ux-driver-draft-v1.js','ux-global-search-v1.js','ux-filter-v1.js','ux-breadcrumb-v1.js'
+              'ux-driver-state-v1.js','ux-driver-form-v1.js','ux-driver-draft-v1.js','ux-global-search-v1.js','ux-filter-v1.js','ux-breadcrumb-v1.js',
+              'prod-hardening-v1.js'
           }
           leaked = sorted(forbidden_initial.intersection(direct))
           if leaked:
@@ -72,7 +79,7 @@ jobs:
               'ux-modal-form-v1.js','entity-card-patch.js','vehicle-command-patch.js','vehicle-history-patch.js','trailer-edit-fix.js',
               'connectivity-patch.js','ux-connectivity-v1.js','offline-home-patch.js','driver-access-patch.js','driver-attention-patch.js','driver-correction-patch.js',
               'ux-driver-state-v1.js','ux-driver-form-v1.js','ux-driver-draft-v1.js','ux-global-search-v1.js','ux-filter-v1.js','ux-breadcrumb-v1.js',
-              'ux-responsibility-v1.js','ux-recent-work-v1.js'
+              'ux-responsibility-v1.js','ux-recent-work-v1.js','prod-hardening-v1.js'
           }
           absent = sorted(required_lazy.difference(lazy))
           if absent:
@@ -80,8 +87,30 @@ jobs:
 
           session_pos = loader.find('./ux-session-boundary-v1.js')
           connectivity_pos = loader.find('./connectivity-patch.js')
+          hardening_positions = [m.start() for m in re.finditer(r'\./prod-hardening-v1\.js', loader)]
           if session_pos < 0 or connectivity_pos < 0 or session_pos > connectivity_pos:
               raise SystemExit('Session boundary must load before connectivity engine')
+          if len(hardening_positions) != 2:
+              raise SystemExit('Production hardening must be present in both role bundles exactly once')
+          if 'loaded.add(role)' not in loader or 'if(failures.length)' not in loader or loader.find('loaded.add(role)') < loader.find('if(failures.length)'):
+              raise SystemExit('Role bundle must be marked loaded only after mandatory module failures are checked')
+
+          hardening = Path('prod-hardening-v1.js').read_text(encoding='utf-8')
+          required_runtime_tokens = [
+              '/auth/v1/logout?scope=local',
+              "crypto.subtle.digest('SHA-256'",
+              "method:'DELETE'",
+              'current_fleet_timezone',
+              'fleet_mvp_offline_user_vault_v1',
+          ]
+          missing_runtime = [token for token in required_runtime_tokens if token not in hardening]
+          if missing_runtime:
+              raise SystemExit('Production hardening contract incomplete: ' + ', '.join(missing_runtime))
+
+          boundary = Path('ux-session-boundary-v1.js').read_text(encoding='utf-8')
+          match = re.search(r'function beforeLogout\(\)\{([^}]*)\}', boundary)
+          if not match or 'scheduleReload' in match.group(1):
+              raise SystemExit('Session boundary must not reload before server-side logout completes')
 
           all_js = sorted({ref for ref in direct + lazy if ref.endswith('.js')})
           Path('/tmp/fleet_js.txt').write_text('\n'.join(all_js), encoding='utf-8')
