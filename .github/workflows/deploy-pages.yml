@@ -62,13 +62,24 @@ jobs:
           SOURCE_SHA: ${{ github.sha }}
         run: |
           set -euo pipefail
-          git config user.name "github-actions[bot]"
-          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
-          git switch --orphan pages-publish
-          cp -a /tmp/greencore-pages/. .
-          git add -A
-          git commit -m "deploy: ${SOURCE_SHA}"
-          git push --force origin HEAD:gh-pages
+          git fetch origin gh-pages
+          rm -rf /tmp/greencore-public
+          git worktree add --detach /tmp/greencore-public origin/gh-pages
+
+          find /tmp/greencore-public -mindepth 1 -maxdepth 1 ! -name .git -exec rm -rf {} +
+          cp -a /tmp/greencore-pages/. /tmp/greencore-public/
+
+          git -C /tmp/greencore-public config user.name "github-actions[bot]"
+          git -C /tmp/greencore-public config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git -C /tmp/greencore-public add -A
+
+          if git -C /tmp/greencore-public diff --cached --quiet; then
+            echo "GitHub Pages payload already current"
+            exit 0
+          fi
+
+          git -C /tmp/greencore-public commit -m "deploy: ${SOURCE_SHA}"
+          git -C /tmp/greencore-public push origin HEAD:gh-pages
 
   verify:
     name: Verify published dashboard
