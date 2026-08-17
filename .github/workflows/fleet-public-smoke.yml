@@ -33,7 +33,7 @@ jobs:
         with:
           node-version: 22
 
-      - name: Validate canonical Fleet manifest and role bundles
+      - name: Validate canonical Fleet manifest and production contracts
         shell: bash
         run: |
           set -euo pipefail
@@ -51,11 +51,22 @@ jobs:
           if duplicates:
               raise SystemExit('Duplicate direct references: ' + ', '.join(duplicates))
 
+          hardening_pos = html.find('./prod-hardening-v1.js')
+          app_pos = html.find('./app.js')
+          if hardening_pos < 0 or app_pos < 0 or hardening_pos > app_pos:
+              raise SystemExit('Production hardening must load before app.js')
+          if direct.count('prod-hardening-v1.js') != 1:
+              raise SystemExit('Production hardening must be a single direct runtime prelude')
+
           loader = Path('ux-role-loader-v1.js').read_text(encoding='utf-8')
           lazy = re.findall(r"['\"]\.\/([^'\"?]+)(?:\?[^'\"]*)?['\"]", loader)
           lazy_missing = [ref for ref in lazy if not Path(ref).is_file()]
           if lazy_missing:
               raise SystemExit('Missing role-bundle files: ' + ', '.join(lazy_missing))
+          if 'prod-hardening-v1.js' in lazy:
+              raise SystemExit('Production hardening must not be lazy-loaded')
+          if re.search(r"js\s*:\s*\[[^\]]*\.css(?:\?|['\"])", loader, re.S):
+              raise SystemExit('CSS file leaked into a JS role bundle')
 
           forbidden_initial = {
               'license-validity-patch.js','period-patch.js','period-readiness-patch.js','quality-resolution-patch.js','ux-quality-modal-v1.js',
@@ -64,8 +75,7 @@ jobs:
               'incident-package-patch.js','fleet-patch.js','fleet-clarity-patch.js','waybills-list-patch.js','statement-print-patch.js','waybill-print-patch.js',
               'ux-modal-form-v1.js','entity-card-patch.js','vehicle-command-patch.js','vehicle-history-patch.js','trailer-edit-fix.js',
               'connectivity-patch.js','ux-connectivity-v1.js','offline-home-patch.js','driver-access-patch.js','driver-attention-patch.js','driver-correction-patch.js',
-              'ux-driver-state-v1.js','ux-driver-form-v1.js','ux-driver-draft-v1.js','ux-global-search-v1.js','ux-filter-v1.js','ux-breadcrumb-v1.js',
-              'prod-hardening-v1.js'
+              'ux-driver-state-v1.js','ux-driver-form-v1.js','ux-driver-draft-v1.js','ux-global-search-v1.js','ux-filter-v1.js','ux-breadcrumb-v1.js'
           }
           leaked = sorted(forbidden_initial.intersection(direct))
           if leaked:
@@ -79,7 +89,7 @@ jobs:
               'ux-modal-form-v1.js','entity-card-patch.js','vehicle-command-patch.js','vehicle-history-patch.js','trailer-edit-fix.js',
               'connectivity-patch.js','ux-connectivity-v1.js','offline-home-patch.js','driver-access-patch.js','driver-attention-patch.js','driver-correction-patch.js',
               'ux-driver-state-v1.js','ux-driver-form-v1.js','ux-driver-draft-v1.js','ux-global-search-v1.js','ux-filter-v1.js','ux-breadcrumb-v1.js',
-              'ux-responsibility-v1.js','ux-recent-work-v1.js','prod-hardening-v1.js'
+              'ux-responsibility-v1.js','ux-recent-work-v1.js'
           }
           absent = sorted(required_lazy.difference(lazy))
           if absent:
@@ -87,25 +97,34 @@ jobs:
 
           session_pos = loader.find('./ux-session-boundary-v1.js')
           connectivity_pos = loader.find('./connectivity-patch.js')
-          hardening_positions = [m.start() for m in re.finditer(r'\./prod-hardening-v1\.js', loader)]
           if session_pos < 0 or connectivity_pos < 0 or session_pos > connectivity_pos:
               raise SystemExit('Session boundary must load before connectivity engine')
-          if len(hardening_positions) != 2:
-              raise SystemExit('Production hardening must be present in both role bundles exactly once')
           if 'loaded.add(role)' not in loader or 'if(failures.length)' not in loader or loader.find('loaded.add(role)') < loader.find('if(failures.length)'):
               raise SystemExit('Role bundle must be marked loaded only after mandatory module failures are checked')
 
           hardening = Path('prod-hardening-v1.js').read_text(encoding='utf-8')
-          required_runtime_tokens = [
+          required_hardening = [
               '/auth/v1/logout?scope=local',
-              "crypto.subtle.digest('SHA-256'",
-              "method:'DELETE'",
               'current_fleet_timezone',
+              'Intl.DateTimeFormat=FleetDateTimeFormat',
+              'prodZonedLocalToDate',
               'fleet_mvp_offline_user_vault_v1',
+              "e.stopImmediatePropagation()",
           ]
-          missing_runtime = [token for token in required_runtime_tokens if token not in hardening]
-          if missing_runtime:
-              raise SystemExit('Production hardening contract incomplete: ' + ', '.join(missing_runtime))
+          missing_hardening = [token for token in required_hardening if token not in hardening]
+          if missing_hardening:
+              raise SystemExit('Production hardening contract incomplete: ' + ', '.join(missing_hardening))
+
+          evidence = Path('evidence-upload-v1.js').read_text(encoding='utf-8')
+          required_evidence = [
+              "crypto.subtle.digest('SHA-256'",
+              'p_sha256:meta.sha256',
+              'euRemove(meta.path)',
+              'euSavePending(meta)',
+          ]
+          missing_evidence = [token for token in required_evidence if token not in evidence]
+          if missing_evidence:
+              raise SystemExit('Evidence integrity contract incomplete: ' + ', '.join(missing_evidence))
 
           boundary = Path('ux-session-boundary-v1.js').read_text(encoding='utf-8')
           match = re.search(r'function beforeLogout\(\)\{([^}]*)\}', boundary)
