@@ -1,0 +1,131 @@
+name: Fleet Production Smoke
+
+on:
+  push:
+    branches:
+      - main
+      - 'agent/**'
+    paths:
+      - 'apps/fleet-prod/**'
+      - '.github/workflows/fleet-prod-smoke.yml'
+  pull_request:
+    paths:
+      - 'apps/fleet-prod/**'
+      - '.github/workflows/fleet-prod-smoke.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: fleet-prod-smoke-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  validate:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v6
+      - uses: actions/setup-node@v6
+        with:
+          node-version: 22
+      - name: Validate production shell and modules
+        shell: bash
+        run: |
+          set -euo pipefail
+          cd apps/fleet-prod
+          python - <<'PY'
+          from pathlib import Path
+          import re
+
+          html=Path('index.html').read_text(encoding='utf-8')
+          if 'MVP' in html or 'Демонстрационный' in html:
+              raise SystemExit('Production shell contains demo branding')
+          if 'runtime-config.js' not in html or 'prod-bootstrap.js' not in html:
+              raise SystemExit('Production shell must use runtime config and fail-closed bootstrap')
+          if 'tikjmiyrhkcjrxjylmqb.supabase.co' in html:
+              raise SystemExit('Production shell is directly wired to demo Supabase')
+
+          cfg=Path('runtime-config.js').read_text(encoding='utf-8')
+          if '__SUPABASE_URL__' not in cfg or '__SUPABASE_PUBLISHABLE_KEY__' not in cfg:
+              raise SystemExit('Committed production runtime config must remain deployment-templated')
+          template=Path('runtime-config.template.js').read_text(encoding='utf-8')
+          for token in ['${SUPABASE_URL}','${SUPABASE_PUBLISHABLE_KEY}']:
+              if token not in template: raise SystemExit('Runtime config template missing: '+token)
+
+          bootstrap=Path('prod-bootstrap.js').read_text(encoding='utf-8')
+          for token in ['DEMO_REF','Production запрещено запускать на fleet-mvp/demo базе','sb_publishable_','prod-hardening-v1.js']:
+              if token not in bootstrap: raise SystemExit('Bootstrap contract missing: '+token)
+          imported=re.findall(r"['\"]\.\/([^'\"?]+)(?:\?[^'\"]*)?['\"]",bootstrap)
+          missing=[p for p in imported if not Path(p).is_file()]
+          if missing: raise SystemExit('Bootstrap references missing files: '+', '.join(missing))
+
+          hardening=Path('prod-hardening-v1.js').read_text(encoding='utf-8')
+          for token in ['LEGACY_DEMO_URL','__FLEET_PROD_CONFIG__','globalThis.fetch=async function fleetProdFetch','/auth/v1/logout?scope=local','current_fleet_timezone','Intl.DateTimeFormat=FleetDateTimeFormat','prodZonedLocalToDate','e.stopImmediatePropagation()']:
+              if token not in hardening: raise SystemExit('Hardening contract missing: '+token)
+
+          sw=Path('sw.js').read_text(encoding='utf-8')
+          for token in ["fleet-prod-shell-","self.registration.scope","cacheModuleTree"]:
+              if token not in sw: raise SystemExit('Production service worker contract missing: '+token)
+
+          manifest=Path('manifest.webmanifest').read_text(encoding='utf-8')
+          if 'Демонстрационный' in manifest or 'MVP' in manifest:
+              raise SystemExit('Production manifest contains demo branding')
+
+          loader=Path('ux-role-loader-v1.js').read_text(encoding='utf-8')
+          lazy=re.findall(r"['\"]\.\/([^'\"?]+)(?:\?[^'\"]*)?['\"]",loader)
+          lazy_missing=[p for p in lazy if not Path(p).is_file()]
+          if lazy_missing: raise SystemExit('Role loader references missing files: '+', '.join(lazy_missing))
+          if re.search(r"js\s*:\s*\[[^\]]*\.css(?:\?|['\"])",loader,re.S):
+              raise SystemExit('CSS file leaked into JS role bundle')
+          if loader.find('loaded.add(role)') < loader.find('if(failures.length)'):
+              raise SystemExit('Role loader marks bundle ready before failure check')
+
+          dockerfile=Path('Dockerfile').read_text(encoding='utf-8')
+          for token in ['nginx:stable-alpine','docker-entrypoint-prod.sh','EXPOSE 8080']:
+              if token not in dockerfile: raise SystemExit('Dockerfile contract missing: '+token)
+          entrypoint=Path('docker-entrypoint-prod.sh').read_text(encoding='utf-8')
+          for token in ['SUPABASE_URL is required','SUPABASE_PUBLISHABLE_KEY is required','tikjmiyrhkcjrxjylmqb','envsubst']:
+              if token not in entrypoint: raise SystemExit('Container entrypoint contract missing: '+token)
+          nginx=Path('nginx.conf').read_text(encoding='utf-8')
+          for token in ['listen 8080','runtime-config.js','Cache-Control "no-store','X-Frame-Options "DENY"']:
+              if token not in nginx: raise SystemExit('Nginx production contract missing: '+token)
+
+          all_js=sorted(set(['runtime-config.js','runtime-config.template.js','prod-bootstrap.js','prod-hardening-v1.js','sw.js']+imported+lazy))
+          Path('/tmp/fleet_prod_js.txt').write_text('\n'.join(p for p in all_js if p.endswith('.js')),encoding='utf-8')
+          print(f'Production modules checked: {len(all_js)}')
+          PY
+          while IFS= read -r file; do
+            test -s "$file"
+            node --check "$file"
+          done < /tmp/fleet_prod_js.txt
+          sh -n docker-entrypoint-prod.sh
+
+  browser-e2e:
+    needs: validate
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v6
+      - uses: actions/setup-node@v6
+        with:
+          node-version: 22
+      - name: Install current stable Playwright test runner
+        run: npm install --no-save --no-package-lock @playwright/test@latest
+      - name: Install Chromium for Playwright
+        run: npx playwright install --with-deps chromium
+      - name: Start production static fixture
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 -m http.server 4173 --bind 127.0.0.1 --directory apps/fleet-prod >/tmp/fleet-prod-http.log 2>&1 &
+          echo $! > /tmp/fleet-prod-http.pid
+          for i in $(seq 1 30); do
+            if curl --fail --silent http://127.0.0.1:4173/ >/dev/null; then exit 0; fi
+            sleep 1
+          done
+          cat /tmp/fleet-prod-http.log
+          exit 1
+      - name: Run production browser contract
+        env:
+          FLEET_E2E_BASE_URL: http://127.0.0.1:4173
+        run: npx playwright test apps/fleet-prod/e2e/prod-smoke.spec.cjs --workers=1 --reporter=line

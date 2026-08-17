@@ -2,7 +2,13 @@ name: Fleet Public Smoke
 
 on:
   push:
-    branches: [main]
+    branches:
+      - main
+      - 'agent/**'
+    paths:
+      - 'apps/demo/public/fleet-mvp/**'
+      - '.github/workflows/fleet-public-smoke.yml'
+  pull_request:
     paths:
       - 'apps/demo/public/fleet-mvp/**'
       - '.github/workflows/fleet-public-smoke.yml'
@@ -12,7 +18,7 @@ permissions:
   contents: read
 
 concurrency:
-  group: fleet-public-smoke
+  group: fleet-public-smoke-${{ github.ref }}
   cancel-in-progress: true
 
 jobs:
@@ -27,7 +33,7 @@ jobs:
         with:
           node-version: 22
 
-      - name: Validate canonical Fleet manifest and role bundles
+      - name: Validate canonical Fleet manifest and production contracts
         shell: bash
         run: |
           set -euo pipefail
@@ -45,11 +51,22 @@ jobs:
           if duplicates:
               raise SystemExit('Duplicate direct references: ' + ', '.join(duplicates))
 
+          hardening_pos = html.find('./prod-hardening-v1.js')
+          app_pos = html.find('./app.js')
+          if hardening_pos < 0 or app_pos < 0 or hardening_pos > app_pos:
+              raise SystemExit('Production hardening must load before app.js')
+          if direct.count('prod-hardening-v1.js') != 1:
+              raise SystemExit('Production hardening must be a single direct runtime prelude')
+
           loader = Path('ux-role-loader-v1.js').read_text(encoding='utf-8')
           lazy = re.findall(r"['\"]\.\/([^'\"?]+)(?:\?[^'\"]*)?['\"]", loader)
           lazy_missing = [ref for ref in lazy if not Path(ref).is_file()]
           if lazy_missing:
               raise SystemExit('Missing role-bundle files: ' + ', '.join(lazy_missing))
+          if 'prod-hardening-v1.js' in lazy:
+              raise SystemExit('Production hardening must not be lazy-loaded')
+          if re.search(r"js\s*:\s*\[[^\]]*\.css(?:\?|['\"])", loader, re.S):
+              raise SystemExit('CSS file leaked into a JS role bundle')
 
           forbidden_initial = {
               'license-validity-patch.js','period-patch.js','period-readiness-patch.js','quality-resolution-patch.js','ux-quality-modal-v1.js',
@@ -82,6 +99,37 @@ jobs:
           connectivity_pos = loader.find('./connectivity-patch.js')
           if session_pos < 0 or connectivity_pos < 0 or session_pos > connectivity_pos:
               raise SystemExit('Session boundary must load before connectivity engine')
+          if 'loaded.add(role)' not in loader or 'if(failures.length)' not in loader or loader.find('loaded.add(role)') < loader.find('if(failures.length)'):
+              raise SystemExit('Role bundle must be marked loaded only after mandatory module failures are checked')
+
+          hardening = Path('prod-hardening-v1.js').read_text(encoding='utf-8')
+          required_hardening = [
+              '/auth/v1/logout?scope=local',
+              'current_fleet_timezone',
+              'Intl.DateTimeFormat=FleetDateTimeFormat',
+              'prodZonedLocalToDate',
+              'fleet_mvp_offline_user_vault_v1',
+              "e.stopImmediatePropagation()",
+          ]
+          missing_hardening = [token for token in required_hardening if token not in hardening]
+          if missing_hardening:
+              raise SystemExit('Production hardening contract incomplete: ' + ', '.join(missing_hardening))
+
+          evidence = Path('evidence-upload-v1.js').read_text(encoding='utf-8')
+          required_evidence = [
+              "crypto.subtle.digest('SHA-256'",
+              'p_sha256:meta.sha256',
+              'euRemove(meta.path)',
+              'euSavePending(meta)',
+          ]
+          missing_evidence = [token for token in required_evidence if token not in evidence]
+          if missing_evidence:
+              raise SystemExit('Evidence integrity contract incomplete: ' + ', '.join(missing_evidence))
+
+          boundary = Path('ux-session-boundary-v1.js').read_text(encoding='utf-8')
+          match = re.search(r'function beforeLogout\(\)\{([^}]*)\}', boundary)
+          if not match or 'scheduleReload' in match.group(1):
+              raise SystemExit('Session boundary must not reload before server-side logout completes')
 
           all_js = sorted({ref for ref in direct + lazy if ref.endswith('.js')})
           Path('/tmp/fleet_js.txt').write_text('\n'.join(all_js), encoding='utf-8')
