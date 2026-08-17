@@ -1,4 +1,4 @@
-const PROD_HARDENING_VERSION='2026.08.17-prod3';
+const PROD_HARDENING_VERSION='2026.08.17-prod4';
 const LEGACY_DEMO_URL='https://tikjmiyrhkcjrxjylmqb.supabase.co';
 const LEGACY_DEMO_KEY='sb_publishable_clr5P9USk7b63MajJmmr9A_Iz0wi_0F';
 const runtime=window.__FLEET_PROD_CONFIG__||{};
@@ -23,21 +23,15 @@ function prodResetCrossBackendState(){
 }
 prodResetCrossBackendState();
 
-// All legacy modules can keep their existing demo URL/key literals. The production prelude
-// rewrites only requests addressed to the known demo backend and replaces its publishable key.
 globalThis.fetch=async function fleetProdFetch(input,init){
   const originalUrl=typeof input==='string'||input instanceof URL?String(input):input?.url;
   if(!originalUrl||!originalUrl.startsWith(LEGACY_DEMO_URL))return NativeFetch(input,init);
   const target=`${PROD_CFG.url}${originalUrl.slice(LEGACY_DEMO_URL.length)}`;
   const baseHeaders=input instanceof Request?input.headers:undefined;
   const headers=new Headers(baseHeaders||{});
-  if(init?.headers) new Headers(init.headers).forEach((v,k)=>headers.set(k,v));
-  if(headers.get('apikey')===LEGACY_DEMO_KEY||headers.has('apikey'))headers.set('apikey',PROD_CFG.key);
-  else headers.set('apikey',PROD_CFG.key);
-  if(input instanceof Request){
-    const request=new Request(target,input);
-    return NativeFetch(request,{...init,headers});
-  }
+  if(init?.headers)new Headers(init.headers).forEach((v,k)=>headers.set(k,v));
+  headers.set('apikey',PROD_CFG.key);
+  if(input instanceof Request){const request=new Request(target,input);return NativeFetch(request,{...init,headers})}
   return NativeFetch(target,{...(init||{}),headers});
 };
 
@@ -45,17 +39,10 @@ function prodParts(date,tz=prodTimezone){const p=new NativeDateTimeFormat('en-CA
 function prodLocalString(date,tz=prodTimezone){const p=prodParts(date,tz);return `${p.year}-${p.month}-${p.day}T${p.hour}:${p.minute}`}
 function prodDeviceLocalString(date){const p=n=>String(n).padStart(2,'0');return `${date.getFullYear()}-${p(date.getMonth()+1)}-${p(date.getDate())}T${p(date.getHours())}:${p(date.getMinutes())}`}
 function prodZonedLocalToDate(value,tz=prodTimezone){
-  const m=String(value||'').match(/^(\d{4})-(\d{2})-(\d{2})T(\d{2}):(\d{2})(?::(\d{2}))?/);
-  if(!m)return null;
-  const naive=Date.UTC(+m[1],+m[2]-1,+m[3],+m[4],+m[5],+(m[6]||0));
-  let guess=naive;
-  for(let i=0;i<3;i++){
-    const p=prodParts(new Date(guess),tz);
-    const represented=Date.UTC(+p.year,+p.month-1,+p.day,+p.hour,+p.minute,+p.second);
-    guess=naive-(represented-guess);
-  }
-  const result=new Date(guess);
-  return Number.isNaN(result.getTime())?null:result;
+  const m=String(value||'').match(/^(\d{4})-(\d{2})-(\d{2})T(\d{2}):(\d{2})(?::(\d{2}))?/);if(!m)return null;
+  const naive=Date.UTC(+m[1],+m[2]-1,+m[3],+m[4],+m[5],+(m[6]||0));let guess=naive;
+  for(let i=0;i<3;i++){const p=prodParts(new Date(guess),tz);const represented=Date.UTC(+p.year,+p.month-1,+p.day,+p.hour,+p.minute,+p.second);guess=naive-(represented-guess)}
+  const result=new Date(guess);return Number.isNaN(result.getTime())?null:result;
 }
 function FleetDateTimeFormat(locales,options){const o={...(options||{})};if(!o.timeZone)o.timeZone=prodTimezone;return new NativeDateTimeFormat(locales,o)}
 Object.setPrototypeOf(FleetDateTimeFormat,NativeDateTimeFormat);
@@ -67,35 +54,29 @@ async function prodLoadTimezone(){
   const s=prodSession();if(!s?.access_token)return false;
   try{
     const r=await NativeFetch(`${PROD_CFG.url}/rest/v1/rpc/current_fleet_timezone`,{method:'POST',headers:{apikey:PROD_CFG.key,Authorization:`Bearer ${s.access_token}`,'Content-Type':'application/json'},body:'{}'});
-    if(!r.ok)return false;
-    const t=await r.text();const v=t?JSON.parse(t):null;
+    if(!r.ok)return false;const t=await r.text();const v=t?JSON.parse(t):null;
     if(typeof v==='string'&&v){prodTimezone=v;timezoneLoaded=true;prodNormalizeDateInputs(document);return true}
   }catch(err){console.warn('Fleet timezone fallback is active',err)}
   return false;
 }
 function prodNormalizeDateInput(input){
   if(!(input instanceof HTMLInputElement)||input.type!=='datetime-local'||input.dataset.prodTz==='1'||!input.value)return;
-  const deviceInstant=new Date(input.value);
-  if(!Number.isNaN(deviceInstant.getTime()))input.value=prodLocalString(deviceInstant);
-  input.dataset.prodTz='1';
+  const deviceInstant=new Date(input.value);if(!Number.isNaN(deviceInstant.getTime()))input.value=prodLocalString(deviceInstant);input.dataset.prodTz='1';
 }
 function prodNormalizeDateInputs(root){root.querySelectorAll?.('input[type="datetime-local"]').forEach(prodNormalizeDateInput)}
+function setTextIfChanged(el,value){if(el&&el.textContent!==value)el.textContent=value}
 function prodScrubDemoUi(root=document){
-  const email=root.querySelector?.('#email');if(email&&email.value==='fleet.admin@example.com')email.value='';
-  root.querySelectorAll?.('.login-sub').forEach(el=>el.textContent='Защищённый рабочий контур');
-  root.querySelectorAll?.('.demo-note').forEach(el=>{el.hidden=true;el.setAttribute('aria-hidden','true')});
-  root.querySelectorAll?.('.brand-sub').forEach(el=>{el.textContent=el.textContent.replace(/\s*·\s*MVP\s*·\s*синтетические данные/gi,' · рабочий контур').replace(/синтетические данные/gi,'рабочий контур')});
-  document.title='АСУ Автопарк';
+  const email=root.matches?.('#email')?root:root.querySelector?.('#email');if(email&&email.value==='fleet.admin@example.com')email.value='';
+  const loginSubs=[];if(root.matches?.('.login-sub'))loginSubs.push(root);root.querySelectorAll?.('.login-sub').forEach(el=>loginSubs.push(el));loginSubs.forEach(el=>setTextIfChanged(el,'Защищённый рабочий контур'));
+  const demoNotes=[];if(root.matches?.('.demo-note'))demoNotes.push(root);root.querySelectorAll?.('.demo-note').forEach(el=>demoNotes.push(el));demoNotes.forEach(el=>{if(!el.hidden)el.hidden=true;if(el.getAttribute('aria-hidden')!=='true')el.setAttribute('aria-hidden','true')});
+  const brandSubs=[];if(root.matches?.('.brand-sub'))brandSubs.push(root);root.querySelectorAll?.('.brand-sub').forEach(el=>brandSubs.push(el));brandSubs.forEach(el=>{const next=el.textContent.replace(/\s*·\s*MVP\s*·\s*синтетические данные/gi,' · рабочий контур').replace(/синтетические данные/gi,'рабочий контур');setTextIfChanged(el,next)});
+  if(document.title!=='АСУ Автопарк')document.title='АСУ Автопарк';
 }
-new MutationObserver(records=>{for(const r of records)for(const n of r.addedNodes){if(!(n instanceof Element))continue;if(n.matches?.('input[type="datetime-local"]'))prodNormalizeDateInput(n);prodNormalizeDateInputs(n);prodScrubDemoUi(n)}prodScrubDemoUi(document)}).observe(document.documentElement,{childList:true,subtree:true});
+new MutationObserver(records=>{for(const r of records)for(const n of r.addedNodes){if(!(n instanceof Element))continue;if(n.matches?.('input[type="datetime-local"]'))prodNormalizeDateInput(n);prodNormalizeDateInputs(n);prodScrubDemoUi(n)}}).observe(document.documentElement,{childList:true,subtree:true});
 
 document.addEventListener('submit',e=>{
-  const form=e.target;if(!(form instanceof HTMLFormElement))return;
-  const changed=[];
-  form.querySelectorAll('input[type="datetime-local"]').forEach(input=>{
-    if(!input.value)return;const original=input.value;const instant=prodZonedLocalToDate(original);if(!instant)return;
-    input.value=prodDeviceLocalString(instant);changed.push([input,original]);
-  });
+  const form=e.target;if(!(form instanceof HTMLFormElement))return;const changed=[];
+  form.querySelectorAll('input[type="datetime-local"]').forEach(input=>{if(!input.value)return;const original=input.value;const instant=prodZonedLocalToDate(original);if(!instant)return;input.value=prodDeviceLocalString(instant);changed.push([input,original])});
   if(changed.length)queueMicrotask(()=>changed.forEach(([input,original])=>{if(input.isConnected)input.value=original}));
 },true);
 
@@ -109,13 +90,9 @@ async function prodLogout(){
   try{if(s?.access_token)await NativeFetch(`${PROD_CFG.url}/auth/v1/logout?scope=local`,{method:'POST',headers:{apikey:PROD_CFG.key,Authorization:`Bearer ${s.access_token}`}})}catch(err){console.warn('Server logout was not confirmed; local session will still be removed',err)}
   try{await prodPurgeLocalSensitiveState()}finally{localStorage.removeItem(PROD_SESSION_KEY);window.dispatchEvent(new CustomEvent('fleet:logout-complete',{detail:{version:PROD_HARDENING_VERSION}}));location.reload()}
 }
-document.addEventListener('click',e=>{
-  const button=e.target.closest?.('[data-action="logout"]');if(!button)return;
-  e.preventDefault();e.stopImmediatePropagation();button.disabled=true;prodLogout();
-},true);
+document.addEventListener('click',e=>{const button=e.target.closest?.('[data-action="logout"]');if(!button)return;e.preventDefault();e.stopImmediatePropagation();button.disabled=true;prodLogout()},true);
 
 prodNormalizeDateInputs(document);prodScrubDemoUi(document);prodLoadTimezone();
-const timezonePoll=setInterval(async()=>{if(await prodLoadTimezone())clearInterval(timezonePoll)},3000);
-setTimeout(()=>clearInterval(timezonePoll),30000);
+const timezonePoll=setInterval(async()=>{if(await prodLoadTimezone())clearInterval(timezonePoll)},3000);setTimeout(()=>clearInterval(timezonePoll),30000);
 window.addEventListener('focus',()=>{if(!timezoneLoaded)prodLoadTimezone()});
 window.PROD_HARDENING={version:PROD_HARDENING_VERSION,backend:prodBackendId(),get timezone(){return prodTimezone},reloadTimezone:prodLoadTimezone};
