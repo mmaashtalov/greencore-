@@ -2,7 +2,7 @@ name: Fleet Public Smoke
 
 on:
   push:
-    branches: [main]
+    branches: [main, 'hotfix/**']
     paths:
       - 'apps/demo/public/fleet-mvp/**'
       - '.github/workflows/fleet-public-smoke.yml'
@@ -12,7 +12,7 @@ permissions:
   contents: read
 
 concurrency:
-  group: fleet-public-smoke
+  group: fleet-public-smoke-${{ github.ref }}
   cancel-in-progress: true
 
 jobs:
@@ -91,3 +91,37 @@ jobs:
             test -s "$file"
             node --check "$file"
           done < /tmp/fleet_js.txt
+
+  browser-e2e:
+    runs-on: ubuntu-latest
+    needs: validate
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+
+      - name: Install Playwright
+        run: |
+          npm install --no-save @playwright/test@latest
+          npx playwright install --with-deps chromium
+
+      - name: Start Fleet static fixture
+        shell: bash
+        run: |
+          python3 -m http.server 4173 --directory apps/demo/public >/tmp/fleet-http.log 2>&1 &
+          echo $! >/tmp/fleet-http.pid
+          for attempt in $(seq 1 30); do
+            if curl --fail --silent http://127.0.0.1:4173/fleet-mvp/ >/dev/null; then
+              exit 0
+            fi
+            sleep 1
+          done
+          cat /tmp/fleet-http.log
+          exit 1
+
+      - name: Run authenticated Android startup contract
+        run: npx playwright test apps/demo/public/fleet-mvp/e2e/mobile-startup.spec.cjs --workers=1 --reporter=line
