@@ -1,4 +1,4 @@
-name: Publish Fleet Enhancements
+name: Validate Fleet Enhancements
 
 on:
   push:
@@ -9,20 +9,18 @@ on:
   workflow_dispatch:
 
 permissions:
-  contents: write
+  contents: read
 
 concurrency:
-  group: fleet-enhancements-publish
+  group: fleet-enhancements-validate
   cancel-in-progress: true
 
 jobs:
-  validate-and-publish:
+  validate:
     runs-on: ubuntu-latest
     steps:
       - name: Checkout source
         uses: actions/checkout@v4
-        with:
-          path: source
 
       - name: Setup Node
         uses: actions/setup-node@v4
@@ -33,7 +31,7 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-          cd source/apps/demo/public/fleet-mvp
+          cd apps/demo/public/fleet-mvp
           python - <<'PY'
           from pathlib import Path
           import json, re
@@ -72,34 +70,11 @@ jobs:
           done < /tmp/fleet_js_refs.txt
           node --check sw.js
 
-      - name: Checkout public branch
-        uses: actions/checkout@v4
-        with:
-          ref: gh-pages
-          path: public
-
-      - name: Sync complete Fleet bundle
+      - name: Confirm startup regression fix is present
         shell: bash
         run: |
           set -euo pipefail
-          src='source/apps/demo/public/fleet-mvp'
-          dst='public/fleet-mvp'
-          mkdir -p "$dst"
-          find "$src" -maxdepth 1 -type f -print0 | while IFS= read -r -d '' file; do
-            cp "$file" "$dst/$(basename "$file")"
-          done
-
-      - name: Commit public Fleet
-        working-directory: public
-        shell: bash
-        run: |
-          set -euo pipefail
-          git config user.name "github-actions[bot]"
-          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
-          if git diff --quiet -- fleet-mvp; then
-            echo "Fleet public files already current"
-            exit 0
-          fi
-          git add fleet-mvp
-          git commit -m "feat(fleet-demo): publish canonical Fleet bundle"
-          git push origin HEAD:gh-pages
+          grep --fixed-strings --quiet "2026.08.18-fresh2" apps/demo/public/fleet-mvp/ux-freshness-v1.js
+          grep --fixed-strings --quiet "if(chip.textContent!==next)chip.textContent=next" apps/demo/public/fleet-mvp/ux-freshness-v1.js
+          grep --fixed-strings --quiet 'ux-freshness-v1.js?v=20260818-1' apps/demo/public/fleet-mvp/index.html
+          echo 'Fleet startup guard present; publishing is owned exclusively by deploy-pages.yml'
