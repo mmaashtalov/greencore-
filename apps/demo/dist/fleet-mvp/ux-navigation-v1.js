@@ -1,0 +1,8 @@
+const UXNAV_VERSION='2026.08.15-nav1';
+const UXNAV_ACTIONS=new Set(['main-nav','back','open-review-queue','issue-waybill','add-vehicle','add-driver','open-drivers','open-incidents','open-vehicle','open-driver','open-waybill-review','open-maintenance','open-repair','open-incident','assignment','vehicle-print','print-waybill','print-statement','driver-history','driver-action']);
+let uxnavPending=null;
+function uxnavTitle(){return document.querySelector('.main .page-title')}
+function uxnavSignature(){const t=uxnavTitle();return t?`${t.textContent?.trim()||''}|${document.querySelector('.main')?.innerHTML.length||0}`:''}
+document.addEventListener('click',e=>{const el=e.target.closest('[data-action]');if(!el||!UXNAV_ACTIONS.has(el.dataset.action))return;const title=uxnavTitle();uxnavPending={at:Date.now(),oldTitle:title?.textContent?.trim()||'',oldNode:title}},true);
+function uxnavApply(){if(!uxnavPending||Date.now()-uxnavPending.at>5000){uxnavPending=null;return}if(document.querySelector('.uxd-backdrop,.ec-backdrop'))return;const title=uxnavTitle();if(!title)return;const changed=title!==uxnavPending.oldNode||(title.textContent?.trim()||'')!==uxnavPending.oldTitle;if(!changed)return;uxnavPending=null;if(!title.hasAttribute('tabindex'))title.tabIndex=-1;title.classList.add('uxnav-focus-target');requestAnimationFrame(()=>{title.focus({preventScroll:true});window.scrollTo({top:0,behavior:matchMedia('(prefers-reduced-motion: reduce)').matches?'auto':'smooth'})})}
+let uxnavQueued=false;function uxnavSchedule(){if(uxnavQueued)return;uxnavQueued=true;queueMicrotask(()=>{uxnavQueued=false;uxnavApply()})}new MutationObserver(uxnavSchedule).observe(document.documentElement,{childList:true,subtree:true});
