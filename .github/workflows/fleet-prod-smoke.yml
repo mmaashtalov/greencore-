@@ -25,8 +25,8 @@ jobs:
   validate:
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-node@v4
+      - uses: actions/checkout@v6
+      - uses: actions/setup-node@v6
         with:
           node-version: 22
       - name: Validate production shell and modules
@@ -100,3 +100,32 @@ jobs:
             node --check "$file"
           done < /tmp/fleet_prod_js.txt
           sh -n docker-entrypoint-prod.sh
+
+  browser-e2e:
+    needs: validate
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v6
+      - uses: actions/setup-node@v6
+        with:
+          node-version: 22
+      - name: Install current stable Playwright test runner
+        run: npm install --no-save --no-package-lock @playwright/test@latest
+      - name: Install Chromium for Playwright
+        run: npx playwright install --with-deps chromium
+      - name: Start production static fixture
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 -m http.server 4173 --bind 127.0.0.1 --directory apps/fleet-prod >/tmp/fleet-prod-http.log 2>&1 &
+          echo $! > /tmp/fleet-prod-http.pid
+          for i in $(seq 1 30); do
+            if curl --fail --silent http://127.0.0.1:4173/ >/dev/null; then exit 0; fi
+            sleep 1
+          done
+          cat /tmp/fleet-prod-http.log
+          exit 1
+      - name: Run production browser contract
+        env:
+          FLEET_E2E_BASE_URL: http://127.0.0.1:4173
+        run: npx playwright test apps/fleet-prod/e2e/prod-smoke.spec.cjs --workers=1 --reporter=line
