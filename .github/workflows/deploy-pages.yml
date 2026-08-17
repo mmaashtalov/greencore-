@@ -6,20 +6,20 @@ on:
   workflow_dispatch:
 
 permissions:
-  contents: read
-  pages: write
-  id-token: write
+  contents: write
 
 concurrency:
   group: pages
   cancel-in-progress: true
 
 jobs:
-  build:
+  publish:
     runs-on: ubuntu-latest
     steps:
       - name: Checkout
         uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
 
       - name: Setup pnpm
         uses: pnpm/action-setup@v4
@@ -37,48 +37,63 @@ jobs:
       - name: Build demo
         run: pnpm --filter @greencore/demo build
 
-      - name: Configure Pages
-        uses: actions/configure-pages@v5
+      - name: Validate publish payload
+        shell: bash
+        run: |
+          set -euo pipefail
+          test -s apps/demo/dist/index.html
+          test -s apps/demo/dist/fleet-mvp/index.html
+          test -s apps/demo/dist/fleet-mvp/ux-freshness-v1.js
+          grep --fixed-strings --quiet 'ux-freshness-v1.js?v=20260818-1' apps/demo/dist/fleet-mvp/index.html
+          grep --fixed-strings --quiet "2026.08.18-fresh2" apps/demo/dist/fleet-mvp/ux-freshness-v1.js
 
-      - name: Upload Pages artifact
-        uses: actions/upload-pages-artifact@v3
-        with:
-          path: apps/demo/dist
+      - name: Stage Pages payload
+        shell: bash
+        run: |
+          set -euo pipefail
+          rm -rf /tmp/greencore-pages
+          mkdir -p /tmp/greencore-pages
+          cp -a apps/demo/dist/. /tmp/greencore-pages/
+          touch /tmp/greencore-pages/.nojekyll
 
-  deploy:
-    environment:
-      name: github-pages
-      url: ${{ steps.deployment.outputs.page_url }}
-    runs-on: ubuntu-latest
-    needs: build
-    outputs:
-      page_url: ${{ steps.deployment.outputs.page_url }}
-    steps:
-      - name: Deploy to GitHub Pages
-        id: deployment
-        uses: actions/deploy-pages@v4
+      - name: Publish to legacy gh-pages source
+        shell: bash
+        env:
+          SOURCE_SHA: ${{ github.sha }}
+        run: |
+          set -euo pipefail
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git switch --orphan pages-publish
+          git rm -rf .
+          cp -a /tmp/greencore-pages/. .
+          git add -A
+          git commit -m "deploy: ${SOURCE_SHA}"
+          git push --force origin HEAD:gh-pages
 
   verify:
     name: Verify published dashboard
     runs-on: ubuntu-latest
-    needs: deploy
-    permissions:
-      contents: write
+    needs: publish
     env:
-      PAGE_URL: ${{ needs.deploy.outputs.page_url }}
+      PAGE_URL: https://mmaashtalov.github.io/greencore-/
+      FLEET_URL: https://mmaashtalov.github.io/greencore-/fleet-mvp/
       SOURCE_SHA: ${{ github.sha }}
     steps:
       - name: Checkout repository
         uses: actions/checkout@v4
 
-      - name: Smoke test live page
+      - name: Smoke test live pages
         shell: bash
         run: |
           set -euo pipefail
-          test -n "$PAGE_URL"
           index_file="$(mktemp)"
+          fleet_file="$(mktemp)"
           published=false
-          for attempt in $(seq 1 30); do
+          for attempt in $(seq 1 36); do
+            root_ok=false
+            fleet_ok=false
+
             if curl --fail --silent --show-error --location \
               --connect-timeout 10 --max-time 30 \
               "$PAGE_URL" --output "$index_file"; then
@@ -88,20 +103,36 @@ jobs:
                 if curl --fail --silent --show-error --location \
                   --connect-timeout 10 --max-time 30 \
                   "$asset_url" | grep --fixed-strings --quiet 'GREENCORE LIVE OPERATIONS'; then
-                  published=true
-                  break
+                  root_ok=true
                 fi
               fi
             fi
+
+            if curl --fail --silent --show-error --location \
+              --connect-timeout 10 --max-time 30 \
+              "$FLEET_URL" --output "$fleet_file" && \
+              grep --fixed-strings --quiet 'ux-freshness-v1.js?v=20260818-1' "$fleet_file" && \
+              curl --fail --silent --show-error --location \
+                --connect-timeout 10 --max-time 30 \
+                "${FLEET_URL}ux-freshness-v1.js?v=20260818-1" | grep --fixed-strings --quiet '2026.08.18-fresh2'; then
+              fleet_ok=true
+            fi
+
+            if [ "$root_ok" = true ] && [ "$fleet_ok" = true ]; then
+              published=true
+              break
+            fi
             sleep 10
           done
+
           if [ "$published" != true ]; then
-            echo "Published dashboard marker was not found at $PAGE_URL" >&2
+            echo "Current dashboard/Fleet payload was not observed on GitHub Pages" >&2
             exit 1
           fi
+
           verified_at="$(date -u +%Y-%m-%dT%H:%M:%SZ)"
-          printf '{\n  "status": "verified",\n  "page_url": "%s",\n  "source_sha": "%s",\n  "verified_at": "%s",\n  "marker": "GREENCORE LIVE OPERATIONS"\n}\n' \
-            "$PAGE_URL" "$SOURCE_SHA" "$verified_at" > /tmp/pages-status.json
+          printf '{\n  "status": "verified",\n  "page_url": "%s",\n  "fleet_url": "%s",\n  "source_sha": "%s",\n  "verified_at": "%s",\n  "marker": "GREENCORE LIVE OPERATIONS",\n  "fleet_startup_fix": "2026.08.18-fresh2"\n}\n' \
+            "$PAGE_URL" "$FLEET_URL" "$SOURCE_SHA" "$verified_at" > /tmp/pages-status.json
 
       - name: Publish verifiable deployment status
         shell: bash
