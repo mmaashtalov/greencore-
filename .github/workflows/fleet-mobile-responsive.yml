@@ -6,6 +6,11 @@ on:
     paths:
       - 'apps/demo/public/fleet-mvp/**'
       - '.github/workflows/fleet-mobile-responsive.yml'
+  pull_request:
+    branches: [main]
+    paths:
+      - 'apps/demo/public/fleet-mvp/**'
+      - '.github/workflows/fleet-mobile-responsive.yml'
   workflow_dispatch:
 
 permissions:
