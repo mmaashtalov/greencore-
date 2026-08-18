@@ -30,6 +30,27 @@
   word-break:break-word;
 }
 
+@media(max-width:759px){
+  .app-shell{
+    padding-bottom:calc(82px + env(safe-area-inset-bottom));
+  }
+
+  body[data-ux-screen="driver-work"] .app-shell{
+    padding-bottom:calc(154px + env(safe-area-inset-bottom));
+  }
+
+  .topbar{
+    padding-top:calc(10px + env(safe-area-inset-top));
+    padding-left:max(16px,env(safe-area-inset-left));
+    padding-right:max(16px,env(safe-area-inset-right));
+  }
+
+  .main{
+    padding-left:max(14px,env(safe-area-inset-left));
+    padding-right:max(14px,env(safe-area-inset-right));
+  }
+}
+
 @media(max-width:720px){
   .topbar{
     padding-top:calc(10px + env(safe-area-inset-top))!important;
