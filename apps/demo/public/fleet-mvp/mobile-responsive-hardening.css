@@ -140,16 +140,21 @@
   }
 
   .topbar{
-    gap:8px;
+    gap:6px!important;
   }
 
   .topbar-actions{
-    gap:4px;
+    gap:4px!important;
   }
 
   .topbar-actions .icon-btn{
-    width:44px;
-    min-width:44px;
+    width:44px!important;
+    min-width:44px!important;
+    height:44px!important;
+    min-height:44px!important;
+    padding:0!important;
+    border-radius:12px!important;
+    font-size:18px!important;
   }
 
   .page-head:has(.page-actions){
@@ -191,7 +196,8 @@
   }
 
   .brand{
-    flex:0 0 34px;
+    flex:0 0 46px;
+    min-width:46px!important;
   }
 
   .topbar-actions{
@@ -199,7 +205,8 @@
   }
 
   .cn-status{
-    max-width:64px;
+    max-width:60px!important;
+    min-width:0!important;
     overflow:hidden;
     white-space:nowrap;
     text-overflow:ellipsis;
@@ -219,7 +226,8 @@
   .uxgs-clear,
   .uxwl-clear,
   .uxi-icon-btn,
-  .svc-close{
+  .svc-close,
+  .cn-close{
     width:44px!important;
     min-width:44px!important;
     height:44px!important;
