@@ -32,8 +32,24 @@ jobs:
         with:
           node-version: 22
 
-      - name: Validate responsive test syntax
-        run: node --check apps/demo/public/fleet-mvp/e2e/mobile-responsive.spec.cjs
+      - name: Validate mobile contracts
+        shell: bash
+        run: |
+          set -euo pipefail
+          node --check apps/demo/public/fleet-mvp/e2e/mobile-responsive-v3.spec.cjs
+          node --check apps/demo/public/fleet-mvp/ux-role-loader-v1.js
+          node --check apps/demo/public/fleet-mvp/connectivity-patch.js
+          node --check apps/demo/public/fleet-mvp/attention-router-patch.js
+          node --check apps/demo/public/fleet-mvp/ux-driver-state-v1.js
+          grep --fixed-strings --quiet 'viewport-fit=cover' apps/demo/public/fleet-mvp/index.html
+          grep --fixed-strings --quiet 'env(safe-area-inset-top)' apps/demo/public/fleet-mvp/mobile-responsive-hardening.css
+          grep --fixed-strings --quiet 'env(safe-area-inset-bottom)' apps/demo/public/fleet-mvp/mobile-responsive-hardening.css
+          grep --fixed-strings --quiet '100dvh' apps/demo/public/fleet-mvp/mobile-responsive-hardening.css
+          grep --fixed-strings --quiet 'grid-auto-columns:minmax(0,1fr)' apps/demo/public/fleet-mvp/mobile-responsive-hardening.css
+          grep --fixed-strings --quiet 'roleUxReady' apps/demo/public/fleet-mvp/ux-role-loader-v1.js
+          grep --fixed-strings --quiet 'connectivity-patch.js?v=20260818-2' apps/demo/public/fleet-mvp/ux-role-loader-v1.js
+          grep --fixed-strings --quiet 'attention-router-patch.js?v=20260818-3' apps/demo/public/fleet-mvp/ux-role-loader-v1.js
+          grep --fixed-strings --quiet 'ux-driver-state-v1.js?v=20260818-3' apps/demo/public/fleet-mvp/ux-role-loader-v1.js
 
       - name: Install Playwright
         run: |
@@ -54,5 +70,5 @@ jobs:
           cat /tmp/fleet-http.log
           exit 1
 
-      - name: Run responsive matrix
-        run: npx playwright test apps/demo/public/fleet-mvp/e2e/mobile-responsive.spec.cjs --workers=1 --reporter=line
+      - name: Run fully hydrated responsive matrix
+        run: npx playwright test apps/demo/public/fleet-mvp/e2e/mobile-responsive-v3.spec.cjs --workers=1 --reporter=line --timeout=45000

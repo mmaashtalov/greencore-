@@ -1,6 +1,6 @@
-const AR_CFG={url:'https://tikjmiyrhkcjrxjylmqb.supabase.co',key:'sb_publishable_clr5P9USk7b63MajJmmr9A_Iz0wi_0F',version:'2026.08.16-attention2'};
+const AR_CFG={url:'https://tikjmiyrhkcjrxjylmqb.supabase.co',key:'sb_publishable_clr5P9USk7b63MajJmmr9A_Iz0wi_0F',version:'2026.08.18-attention3'};
 const AR_SESSION='fleet_mvp_session_v2',AR_FILTER='fleet_mvp_attention_filter_v1';
-let arHome=null,arHomePromise=null;
+let arHome=null,arHomePromise=null,arDecoratingHome=false;
 function arSession(){try{return JSON.parse(localStorage.getItem(AR_SESSION)||'null')}catch{return null}}
 function arh(v=''){return String(v??'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#039;'}[c]))}
 async function arRpc(name,params={}){const s=arSession();if(!s?.access_token)throw new Error('Нужно войти в систему.');const r=await fetch(`${AR_CFG.url}/rest/v1/rpc/${encodeURIComponent(name)}`,{method:'POST',headers:{apikey:AR_CFG.key,Authorization:`Bearer ${s.access_token}`,'Content-Type':'application/json'},body:JSON.stringify(params)});if(!r.ok){const x=await r.json().catch(()=>({}));throw new Error(x.message||x.error||x.hint||`HTTP ${r.status}`)}const t=await r.text();return t?JSON.parse(t):null}
@@ -22,10 +22,47 @@ async function arRoute(id){const home=await arGetHome(true);const t=arTargetFor(
   if(t.kind==='review_queue'){arSetFilter(null);arBase('open-review-queue');return}
   arSetFilter(null);arBase('main-nav',{id:'home'});
 }
-async function arDecorateHome(){const title=document.querySelector('.page-title')?.textContent?.trim();if(title!=='Автопарк')return;const cards=[...document.querySelectorAll('[data-action="attention"][data-id]')];if(!cards.length||cards.every(x=>x.dataset.arVersion===AR_CFG.version))return;let home;try{home=await arGetHome()}catch{return}
-  const grid=cards[0]?.parentElement;
-  if(grid){cards.sort((a,b)=>Number(arItemFor(home,a.dataset.id)?.priority??999)-Number(arItemFor(home,b.dataset.id)?.priority??999)).forEach(card=>grid.appendChild(card))}
-  for(const c of cards){const item=arItemFor(home,c.dataset.id);const target=item?.target;if(!target)continue;const priority=arPriorityMeta(item);c.dataset.arKind=target.kind||'';c.dataset.arFilter=target.filter||'';c.dataset.arTarget=target.id||'';c.dataset.arPriority=String(item?.priority??'');c.dataset.arVersion=AR_CFG.version;c.classList.remove('ar-priority-urgent','ar-priority-now','ar-priority-today','ar-priority-next');c.classList.add(`ar-priority-${priority.className}`);const titleNode=c.querySelector('.card-title');if(titleNode&&!c.querySelector('.ar-priority-chip'))titleNode.insertAdjacentHTML('afterend',`<span class="ar-priority-chip ${arh(priority.className)}">${arh(priority.label)}</span>`);const sub=c.querySelector('.card-sub');if(sub)sub.textContent=`${priority.label} · ${target.kind==='reporting_period'?'Открыть сверку':'Открыть задачу'}`;c.setAttribute('aria-label',`${item?.label||'Задача'}. ${priority.label}. Открыть задачу.`)}
+async function arDecorateHome(){
+  if(arDecoratingHome)return;
+  const title=document.querySelector('.page-title')?.textContent?.trim();
+  if(title!=='Автопарк')return;
+  let cards=[...document.querySelectorAll('[data-action="attention"][data-id]')];
+  if(!cards.length||cards.every(x=>x.dataset.arVersion===AR_CFG.version))return;
+  arDecoratingHome=true;
+  try{
+    let home;
+    try{home=await arGetHome()}catch{return}
+    if(document.querySelector('.page-title')?.textContent?.trim()!=='Автопарк')return;
+    cards=[...document.querySelectorAll('[data-action="attention"][data-id]')];
+    if(!cards.length)return;
+    for(const c of cards)c.dataset.arVersion=AR_CFG.version;
+    const grid=cards[0]?.parentElement;
+    if(grid){
+      const desired=[...cards].sort((a,b)=>Number(arItemFor(home,a.dataset.id)?.priority??999)-Number(arItemFor(home,b.dataset.id)?.priority??999));
+      const current=[...grid.children].filter(x=>x.matches?.('[data-action="attention"][data-id]'));
+      const changed=desired.some((card,i)=>current[i]!==card);
+      if(changed)desired.forEach(card=>grid.appendChild(card));
+    }
+    for(const c of cards){
+      const item=arItemFor(home,c.dataset.id);
+      const target=item?.target||null;
+      const priority=arPriorityMeta(item);
+      c.dataset.arKind=target?.kind||'';
+      c.dataset.arFilter=target?.filter||'';
+      c.dataset.arTarget=target?.id||'';
+      c.dataset.arPriority=String(item?.priority??'');
+      c.classList.remove('ar-priority-urgent','ar-priority-now','ar-priority-today','ar-priority-next');
+      c.classList.add(`ar-priority-${priority.className}`);
+      const titleNode=c.querySelector('.card-title');
+      if(titleNode&&!c.querySelector('.ar-priority-chip'))titleNode.insertAdjacentHTML('afterend',`<span class="ar-priority-chip ${arh(priority.className)}">${arh(priority.label)}</span>`);
+      if(target){
+        const sub=c.querySelector('.card-sub');
+        const next=`${priority.label} · ${target.kind==='reporting_period'?'Открыть сверку':'Открыть задачу'}`;
+        if(sub&&sub.textContent!==next)sub.textContent=next;
+        c.setAttribute('aria-label',`${item?.label||'Задача'}. ${priority.label}. Открыть задачу.`);
+      }
+    }
+  }finally{arDecoratingHome=false}
 }
 function arBanner(text){return `<div class="ar-filter-banner"><div><strong>${arh(text)}</strong><span>Показан контекст задачи с главной</span></div><button type="button" class="ghost-btn" data-ar-clear>Показать всё</button></div>`}
 function arApplyService(filter){const main=document.querySelector('.main');if(!main||main.dataset.arFilter===filter)return;const title=document.querySelector('.page-title')?.textContent?.trim();if(title!=='ТО и ремонт')return;const items=[...main.querySelectorAll('[data-action="service-item"][data-type]')];if(!items.length)return;let shown=0;for(const x of items){const yes=x.dataset.type===filter;x.hidden=!yes;if(yes)shown++}const head=main.querySelector('.page-head');if(head&&!main.querySelector('.ar-filter-banner'))head.insertAdjacentHTML('afterend',arBanner(`${arFilterLabel(filter)} · ${shown}`));main.dataset.arFilter=filter}
