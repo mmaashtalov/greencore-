@@ -6,13 +6,18 @@ on:
     paths:
       - 'apps/demo/public/fleet-mvp/**'
       - '.github/workflows/fleet-role-loader-probe.yml'
+  pull_request:
+    branches: [main]
+    paths:
+      - 'apps/demo/public/fleet-mvp/**'
+      - '.github/workflows/fleet-role-loader-probe.yml'
   workflow_dispatch:
 
 permissions:
   contents: read
 
 concurrency:
-  group: fleet-role-loader-probe
+  group: fleet-role-loader-probe-${{ github.ref }}
   cancel-in-progress: true
 
 jobs:
