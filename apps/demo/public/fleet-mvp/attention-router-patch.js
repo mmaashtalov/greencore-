@@ -2,7 +2,7 @@ const AR_CFG={url:'https://tikjmiyrhkcjrxjylmqb.supabase.co',key:'sb_publishable
 const AR_SESSION='fleet_mvp_session_v2',AR_FILTER='fleet_mvp_attention_filter_v1';
 let arHome=null,arHomePromise=null,arDecoratingHome=false;
 function arSession(){try{return JSON.parse(localStorage.getItem(AR_SESSION)||'null')}catch{return null}}
-function arh(v=''){return String(v??'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot',"'":'&#039;'}[c]))}
+function arh(v=''){return String(v??'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#039;'}[c]))}
 async function arRpc(name,params={}){const s=arSession();if(!s?.access_token)throw new Error('Нужно войти в систему.');const r=await fetch(`${AR_CFG.url}/rest/v1/rpc/${encodeURIComponent(name)}`,{method:'POST',headers:{apikey:AR_CFG.key,Authorization:`Bearer ${s.access_token}`,'Content-Type':'application/json'},body:JSON.stringify(params)});if(!r.ok){const x=await r.json().catch(()=>({}));throw new Error(x.message||x.error||x.hint||`HTTP ${r.status}`)}const t=await r.text();return t?JSON.parse(t):null}
 async function arGetHome(force=false){if(force){arHome=null;arHomePromise=null}if(arHome)return arHome;if(!arHomePromise)arHomePromise=arRpc('get_admin_home').then(x=>{arHome=x;return x}).finally(()=>{arHomePromise=null});return arHomePromise}
 function arFilter(){try{return JSON.parse(sessionStorage.getItem(AR_FILTER)||'null')}catch{return null}}
@@ -35,12 +35,7 @@ async function arDecorateHome(){
     if(document.querySelector('.page-title')?.textContent?.trim()!=='Автопарк')return;
     cards=[...document.querySelectorAll('[data-action="attention"][data-id]')];
     if(!cards.length)return;
-
-    // Mark every card before moving nodes. A partial/legacy backend item without
-    // target must still be considered decorated, otherwise appendChild below
-    // creates a self-sustaining MutationObserver loop.
     for(const c of cards)c.dataset.arVersion=AR_CFG.version;
-
     const grid=cards[0]?.parentElement;
     if(grid){
       const desired=[...cards].sort((a,b)=>Number(arItemFor(home,a.dataset.id)?.priority??999)-Number(arItemFor(home,b.dataset.id)?.priority??999));
@@ -48,7 +43,6 @@ async function arDecorateHome(){
       const changed=desired.some((card,i)=>current[i]!==card);
       if(changed)desired.forEach(card=>grid.appendChild(card));
     }
-
     for(const c of cards){
       const item=arItemFor(home,c.dataset.id);
       const target=item?.target||null;
