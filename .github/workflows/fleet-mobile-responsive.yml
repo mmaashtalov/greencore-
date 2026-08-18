@@ -40,6 +40,7 @@ jobs:
           node --check apps/demo/public/fleet-mvp/ux-role-loader-v1.js
           node --check apps/demo/public/fleet-mvp/connectivity-patch.js
           node --check apps/demo/public/fleet-mvp/attention-router-patch.js
+          node --check apps/demo/public/fleet-mvp/ux-driver-state-v1.js
           grep --fixed-strings --quiet 'viewport-fit=cover' apps/demo/public/fleet-mvp/index.html
           grep --fixed-strings --quiet 'env(safe-area-inset-top)' apps/demo/public/fleet-mvp/mobile-responsive-hardening.css
           grep --fixed-strings --quiet 'env(safe-area-inset-bottom)' apps/demo/public/fleet-mvp/mobile-responsive-hardening.css
@@ -48,6 +49,7 @@ jobs:
           grep --fixed-strings --quiet 'roleUxReady' apps/demo/public/fleet-mvp/ux-role-loader-v1.js
           grep --fixed-strings --quiet 'connectivity-patch.js?v=20260818-2' apps/demo/public/fleet-mvp/ux-role-loader-v1.js
           grep --fixed-strings --quiet 'attention-router-patch.js?v=20260818-3' apps/demo/public/fleet-mvp/ux-role-loader-v1.js
+          grep --fixed-strings --quiet 'ux-driver-state-v1.js?v=20260818-3' apps/demo/public/fleet-mvp/ux-role-loader-v1.js
 
       - name: Install Playwright
         run: |
