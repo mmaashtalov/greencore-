@@ -11,7 +11,10 @@
 .brand-text,
 .list-main,
 .kv-value,
-.section-title{
+.section-title,
+.card-head>div,
+.alert>div,
+.sf-now-main{
   min-width:0;
 }
 
@@ -25,7 +28,9 @@
 .alert-title,
 .alert-sub,
 .brand-title,
-.brand-sub{
+.brand-sub,
+.sf-now-title,
+.sf-now-detail{
   overflow-wrap:anywhere;
   word-break:break-word;
 }
@@ -48,6 +53,20 @@
   .main{
     padding-left:max(14px,env(safe-area-inset-left));
     padding-right:max(14px,env(safe-area-inset-right));
+  }
+
+  .uxgs-panel,
+  .uxi-sheet,
+  .svc-sheet,
+  .uxd-dialog,
+  .uxm-dialog{
+    max-height:min(90dvh,calc(100dvh - env(safe-area-inset-top) - 12px));
+  }
+
+  .uxgs-panel,
+  .uxi-sheet,
+  .svc-sheet{
+    padding-bottom:env(safe-area-inset-bottom);
   }
 }
 
@@ -78,7 +97,9 @@
     padding-left:max(18px,env(safe-area-inset-left));
   }
 
-  .ux-search input{
+  .ux-search input,
+  .uxgs-search input,
+  .wl-search input{
     font-size:16px!important;
   }
 }
@@ -95,6 +116,26 @@
   .page-head:has(.page-actions) .page-actions>*{
     flex:1 1 auto;
   }
+
+  .main>*,
+  .section,
+  .card,
+  .hero,
+  .list,
+  .list-item,
+  .alert,
+  .sf-now,
+  .sf-exception{
+    max-width:100%;
+    min-width:0;
+  }
+
+  .list-item .badge{
+    max-width:44%;
+    white-space:normal;
+    text-align:center;
+    overflow-wrap:anywhere;
+  }
 }
 
 @media(pointer:coarse){
@@ -106,16 +147,33 @@
     align-items:center;
   }
 
-  .ux-search-clear{
+  .ux-search-clear,
+  .uxgs-clear,
+  .uxwl-clear,
+  .uxi-icon-btn,
+  .svc-close{
     width:44px!important;
     min-width:44px!important;
     height:44px!important;
     min-height:44px!important;
+  }
+
+  .ux-search-clear{
     right:2px!important;
   }
 
   .ux-search input{
     padding-right:52px!important;
+    font-size:16px!important;
+  }
+
+  .uxgs-search input{
+    padding-right:52px!important;
+    font-size:16px!important;
+  }
+
+  .wl-search input{
+    padding-right:100px!important;
     font-size:16px!important;
   }
 }
