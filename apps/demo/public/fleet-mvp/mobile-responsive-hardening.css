@@ -1,0 +1,131 @@
+/* Mobile responsive hardening: safe areas, narrow widths, coarse-pointer ergonomics. */
+
+.splash,
+.loading-screen,
+.app-shell,
+.login-wrap{
+  min-height:100dvh;
+}
+
+.page-title-wrap,
+.brand-text,
+.list-main,
+.kv-value,
+.section-title{
+  min-width:0;
+}
+
+.page-title,
+.page-subtitle,
+.card-title,
+.card-sub,
+.list-title,
+.list-sub,
+.kv-value,
+.alert-title,
+.alert-sub,
+.brand-title,
+.brand-sub{
+  overflow-wrap:anywhere;
+  word-break:break-word;
+}
+
+@media(max-width:720px){
+  .topbar{
+    padding-top:calc(10px + env(safe-area-inset-top))!important;
+    padding-left:max(14px,env(safe-area-inset-left))!important;
+    padding-right:max(14px,env(safe-area-inset-right))!important;
+  }
+
+  .main{
+    padding-left:max(16px,env(safe-area-inset-left))!important;
+    padding-right:max(16px,env(safe-area-inset-right))!important;
+  }
+
+  .page-title{
+    font-size:clamp(24px,8vw,31px)!important;
+  }
+
+  .toast-host{
+    top:calc(86px + env(safe-area-inset-top))!important;
+  }
+
+  .login-wrap{
+    padding-top:calc(18px + env(safe-area-inset-top));
+    padding-right:max(18px,env(safe-area-inset-right));
+    padding-bottom:calc(18px + env(safe-area-inset-bottom));
+    padding-left:max(18px,env(safe-area-inset-left));
+  }
+
+  .ux-search input{
+    font-size:16px!important;
+  }
+}
+
+@media(max-width:360px){
+  .page-head:has(.page-actions){
+    flex-wrap:wrap;
+  }
+
+  .page-head:has(.page-actions) .page-actions{
+    width:100%;
+  }
+
+  .page-head:has(.page-actions) .page-actions>*{
+    flex:1 1 auto;
+  }
+}
+
+@media(pointer:coarse){
+  .check-chip span,
+  button.uxflt-chip,
+  .uxwl-chips .uxflt-chip{
+    min-height:44px!important;
+    display:inline-flex;
+    align-items:center;
+  }
+
+  .ux-search-clear{
+    width:44px!important;
+    min-width:44px!important;
+    height:44px!important;
+    min-height:44px!important;
+    right:2px!important;
+  }
+
+  .ux-search input{
+    padding-right:52px!important;
+    font-size:16px!important;
+  }
+}
+
+/* A landscape phone is still a touch device. Do not silently turn it into the
+   desktop navigation model just because its CSS width crosses 760px. */
+@media(pointer:coarse) and (min-width:760px) and (max-height:520px){
+  .app-shell{
+    padding-bottom:82px;
+  }
+
+  .desktop-nav{
+    display:none!important;
+  }
+
+  .bottom-nav{
+    display:grid!important;
+  }
+
+  .topbar{
+    padding-top:calc(10px + env(safe-area-inset-top));
+    padding-left:max(16px,env(safe-area-inset-left));
+    padding-right:max(16px,env(safe-area-inset-right));
+  }
+
+  .main{
+    padding-left:max(14px,env(safe-area-inset-left));
+    padding-right:max(14px,env(safe-area-inset-right));
+  }
+
+  .toast-host{
+    bottom:calc(88px + env(safe-area-inset-bottom));
+  }
+}
