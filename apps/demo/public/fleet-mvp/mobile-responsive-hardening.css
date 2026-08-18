@@ -99,21 +99,9 @@
   }
 }
 
-/* A landscape phone is still a touch device. Do not silently turn it into the
-   desktop navigation model just because its CSS width crosses 760px. */
+/* Wide landscape phones use the compact desktop navigation to preserve scarce
+   vertical space, but still need notch / gesture safe-area handling. */
 @media(pointer:coarse) and (min-width:760px) and (max-height:520px){
-  .app-shell{
-    padding-bottom:82px;
-  }
-
-  .desktop-nav{
-    display:none!important;
-  }
-
-  .bottom-nav{
-    display:grid!important;
-  }
-
   .topbar{
     padding-top:calc(10px + env(safe-area-inset-top));
     padding-left:max(16px,env(safe-area-inset-left));
@@ -125,7 +113,7 @@
     padding-right:max(14px,env(safe-area-inset-right));
   }
 
-  .toast-host{
-    bottom:calc(88px + env(safe-area-inset-bottom));
+  .desktop-nav .nav-btn{
+    min-height:44px;
   }
 }
