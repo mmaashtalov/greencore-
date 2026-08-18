@@ -1,4 +1,4 @@
-const UXRL_VERSION='2026.08.18-role59';
+const UXRL_VERSION='2026.08.18-role60';
 const loaded=new Set();
 const loading=new Map();
 const bundles={
@@ -12,7 +12,7 @@ const bundles={
   },
   driver:{
     css:['./connectivity-patch.css?v=20260815-1','./ux-connectivity-v1.css?v=20260815-1','./driver-correction-patch.css?v=20260815-2','./driver-attention-patch.css?v=20260815-1','./ux-driver-state-v1.css?v=20260816-2','./ux-driver-form-v1.css?v=20260815-1','./ux-driver-draft-v1.css?v=20260815-1','./mobile-responsive-hardening.css?v=20260818-1'],
-    js:['./ux-session-boundary-v1.js?v=20260815-2','./connectivity-patch.js?v=20260818-2','./ux-connectivity-v1.js?v=20260815-1','./offline-home-patch.js?v=20260815-2','./driver-correction-patch.js?v=20260815-2','./driver-attention-patch.js?v=20260815-3','./ux-driver-state-v1.js?v=20260816-2','./ux-driver-form-v1.js?v=20260815-1','./driver-refuel-cost-v1.js?v=20260816-1','./ux-driver-draft-v1.js?v=20260815-2','./driver-live-refresh-v1.js?v=20260816-3']
+    js:['./ux-session-boundary-v1.js?v=20260815-2','./connectivity-patch.js?v=20260818-2','./ux-connectivity-v1.js?v=20260815-1','./offline-home-patch.js?v=20260815-2','./driver-correction-patch.js?v=20260815-2','./driver-attention-patch.js?v=20260815-3','./ux-driver-state-v1.js?v=20260818-3','./ux-driver-form-v1.js?v=20260815-1','./driver-refuel-cost-v1.js?v=20260816-1','./ux-driver-draft-v1.js?v=20260815-2','./driver-live-refresh-v1.js?v=20260816-3']
   }
 };
 function loadCss(href){
